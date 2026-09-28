@@ -1,0 +1,4 @@
+COURSE_REPO: https://github.com/CS5351-0901/CS5351
+BASE_MAIN: 3c345ca4dc2abc9afc66a3b35cf7541e02f85438
+BRANCH: course/a1
+EXPECTED_DIFF_SCOPE: course_evidence/A1/**
