@@ -362,7 +362,7 @@ class CodeAgentPlugin(Star):
         error_type = error_info.get('error_type', '')
         error_message = error_info.get('error_message', '')
         
-        if 'Import' in error_type:
+        if 'Import' in error_type or error_type == 'ModuleNotFoundError':
             missing = re.search(r"No module named '([^']+)'", error_message)
             if missing:
                 return f"在 requirements.txt 中添加 {missing.group(1)}"
