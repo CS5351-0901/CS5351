@@ -42,8 +42,8 @@ class CodeAgentPlugin(Star):
     
     def _extract_requirement(self, text: str) -> Optional[str]:
         patterns = [
-            r'/agent\s+(.+)',
-            r'@.*?/agent\s+(.+)'
+            r'/agent\s+(\S[\s\S]*)',
+            r'@.*?/agent\s+(\S[\s\S]*)'
         ]
         for pattern in patterns:
             match = re.search(pattern, text, re.IGNORECASE)
