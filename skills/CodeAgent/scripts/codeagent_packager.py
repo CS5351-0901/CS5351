@@ -490,6 +490,7 @@ class ProjectPackager:
                         (project_dir / "requirements.txt").write_text(req_content, encoding='utf-8')
                     
                     (project_dir / "src" / "__init__.py").write_text("", encoding='utf-8')
+                    (project_dir / "tests").mkdir(parents=True, exist_ok=True)
                     (project_dir / "tests" / "__init__.py").write_text("", encoding='utf-8')
                     
                 elif project.language in ['javascript', 'typescript']:
