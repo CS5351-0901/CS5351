@@ -1,0 +1,1 @@
+NEGATIVE_TEST_ONLY: This team file must be rejected from a non-team member branch.
