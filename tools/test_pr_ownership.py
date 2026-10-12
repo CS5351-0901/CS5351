@@ -43,4 +43,12 @@ class OwnershipTests(unittest.TestCase):
  def test_path_traversal_blocked(self):
   self.assertTrue(self.check("d2",["course_evidence/D2/../team/file.md"]))
 
+ def test_d2_cannot_modify_team_or_a1_after_week5(self):
+  paths=[
+   "course_evidence/team/week06/status.md",
+   "course_evidence/A1/week06/review.md",
+   "tests/roles/a1/test_core.py",
+  ]
+  errors=self.check("d2",paths)
+  self.assertEqual(len(errors),3)
 if __name__=="__main__":unittest.main(verbosity=2)
