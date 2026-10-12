@@ -231,14 +231,30 @@ class A2OrchestrationTests(unittest.IsolatedAsyncioTestCase):
         deps.assert_called_once_with()
         self.process_guard.assert_not_called()
 
-    @unittest.expectedFailure
-    def test_factory_accepts_context_using_declared_constructor(self):
-        """Known Week 4 mismatch: factory omits required config; not a host test."""
+    def test_factory_forwards_context_and_config(self):
+        context = object()
+        config = {"quality_threshold": 91, "admin_blacklist": ["blocked"]}
+        with patch.object(MAIN, "CodeAgentPlugin") as plugin_type:
+            result = MAIN.get_star(context=context, config=config)
+        plugin_type.assert_called_once_with(context=context, config=config)
+        self.assertIs(result, plugin_type.return_value)
+
+    def test_factory_constructs_plugin_without_replacing_config(self):
+        """Exercise the real constructor with populated and empty config."""
         with patch.object(MAIN.CodeAgentPlugin, "_ensure_nodejs"), \
                 patch.object(MAIN.CodeAgentPlugin, "_ensure_js_dependencies"), \
                 patch.object(MAIN, "Path", return_value=self.workspace):
-            plugin = MAIN.get_star(object())
-        self.assertIsInstance(plugin, MAIN.CodeAgentPlugin)
+            for config in ({"quality_threshold": 91}, {}):
+                with self.subTest(config=config):
+                    plugin = MAIN.get_star(object(), config)
+                    self.assertIsInstance(plugin, MAIN.CodeAgentPlugin)
+                    self.assertIs(plugin.config, config)
+                    self.assertEqual(plugin.active_sessions, {})
+                    self.assertEqual(
+                        plugin._get_config("quality_threshold", 75),
+                        config.get("quality_threshold", 75),
+                    )
+        self.process_guard.assert_not_called()
 
 
 if __name__ == "__main__":
