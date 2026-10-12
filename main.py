@@ -691,5 +691,6 @@ def test_main():
         self.logger.info("CodeAgent 插件已卸载")
 
 
-def get_star(context: Context):
-    return CodeAgentPlugin(context)
+def get_star(context: Context, config: AstrBotConfig):
+    """Create the plugin with the caller-provided context and configuration."""
+    return CodeAgentPlugin(context=context, config=config)
