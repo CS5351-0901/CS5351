@@ -80,6 +80,29 @@ class B1BaselineTests(unittest.TestCase):
         self.assertIsNone(plugin._extract_requirement("/agent \n  "))
         self.assertIsNone(plugin._extract_requirement("@builder/agent   "))
 
+    def test_command_like_fragments_do_not_start_requests(self):
+        plugin = self.make_plugin()
+        for text in (
+            "prefix/agent build a parser",
+            "mail@builder/agent build a parser",
+            "/agentbot build a parser",
+            "@/agent build a parser",
+        ):
+            with self.subTest(text=text):
+                self.assertIsNone(plugin._extract_requirement(text))
+
+    def test_valid_command_boundaries_keep_multiline_text(self):
+        plugin = self.make_plugin()
+        for text in (
+            "Please /agent build a parser\nwith tests  ",
+            "notice\r\n/AGENT build a parser\nwith tests  ",
+            "@builder-bot/agent build a parser\nwith tests  ",
+        ):
+            with self.subTest(text=text):
+                self.assertEqual(
+                    plugin._extract_requirement(text), "build a parser\nwith tests"
+                )
+
     def test_blacklist_normalizes_ids_and_checks_both_lists(self):
         plugin = self.make_plugin(
             {"admin_blacklist": [42], "group_blacklist": ["blocked-room"]}
@@ -104,6 +127,12 @@ class B1BaselineTests(unittest.TestCase):
         for length, expected in ((29, "S"), (30, "M"), (99, "M"), (100, "L")):
             with self.subTest(length=length):
                 self.assertEqual(plugin._assess_project("x" * length)["size"], expected)
+
+    def test_project_assessment_ignores_outer_whitespace(self):
+        plugin = self.make_plugin()
+        self.assertEqual(plugin._assess_project("\n  " + "x" * 29 + "\t\n"),
+                         {"type": "python", "size": "S"})
+        self.assertEqual(plugin._assess_project("\t JavaScript parser \n")["type"], "js")
 
 
 if __name__ == "__main__":
