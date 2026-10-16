@@ -1,6 +1,7 @@
 """Executable C1 baseline for the owned debug and snapshot helpers."""
 
 import importlib.util
+import json
 import os
 import sys
 import tempfile
@@ -98,6 +99,42 @@ class C1BaselineTests(unittest.TestCase):
 
             self.assertEqual(self.plugin._rollback_to_snapshot("session", "core_complete")["code"], "new")
             self.assertEqual(self.plugin._rollback_to_snapshot("session", "other_step"), None)
+
+    def test_same_second_snapshots_preserve_both_recovery_points(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            self.plugin.workspace = Path(temp_dir)
+            with mock.patch.object(MAIN.time, "time", return_value=1000):
+                with mock.patch.object(MAIN.time, "time_ns", side_effect=[1000000000001, 1000000000002]):
+                    first = Path(self.plugin._save_snapshot(
+                        "session", "core_complete", "old", [{"name": "old.py"}]
+                    ))
+                    second = Path(self.plugin._save_snapshot(
+                        "session", "core_complete", "new", [{"name": "new.py"}]
+                    ))
+
+            self.assertNotEqual(first, second)
+            self.assertEqual(len(list(first.parent.glob("core_complete_*.json"))), 2)
+            self.assertEqual(json.loads(first.read_text(encoding="utf-8"))["code"], "old")
+            self.assertEqual(json.loads(second.read_text(encoding="utf-8"))["code"], "new")
+            os.utime(first, (1000, 1000))
+            os.utime(second, (1001, 1001))
+            restored = self.plugin._rollback_to_snapshot("session", "core_complete")
+            self.assertEqual(restored["code"], "new")
+            self.assertEqual(restored["files"], [{"name": "new.py"}])
+
+    def test_rollback_ignores_newer_snapshots_from_other_steps_and_sessions(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            self.plugin.workspace = Path(temp_dir)
+            selected = Path(self.plugin._save_snapshot("session", "core_complete", "selected", []))
+            other_step = Path(self.plugin._save_snapshot("session", "debug", "other step", []))
+            other_session = Path(self.plugin._save_snapshot("other", "core_complete", "other session", []))
+            os.utime(selected, (1000, 1000))
+            os.utime(other_step, (2000, 2000))
+            os.utime(other_session, (3000, 3000))
+
+            restored = self.plugin._rollback_to_snapshot("session", "core_complete")
+            self.assertEqual(restored["code"], "selected")
+            self.assertEqual(restored["step"], "core_complete")
 
     def test_rollback_without_snapshot_returns_none(self):
         with tempfile.TemporaryDirectory() as temp_dir:
