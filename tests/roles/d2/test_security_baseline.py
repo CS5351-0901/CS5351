@@ -57,6 +57,45 @@ def test_scan_code_dispatches_shell_and_reports_tool_status():
     assert any(finding.category == "tool_error" for finding in report.findings)
 
 
+def test_shell_scan_blocks_root_deletion_when_shellcheck_is_unavailable():
+    module = load_security_module()
+    scanner = module.CodeSecurityScanner()
+    scanner.shellcheck_checker.check = lambda code, file_path: {
+        "error": "ShellCheck unavailable",
+        "issues": [],
+    }
+
+    report = scanner.scan_shell("rm -rf /\n", "dangerous.sh")
+
+    assert report.risk_level is module.RiskLevel.CRITICAL
+    assert report.passed is False
+    assert any(
+        finding.category == "dangerous_pattern"
+        and finding.line == 1
+        for finding in report.findings
+    )
+
+
+def test_shell_scan_blocks_eval_and_allows_scoped_recursive_delete():
+    module = load_security_module()
+    scanner = module.CodeSecurityScanner()
+    scanner.shellcheck_checker.check = lambda code, file_path: {
+        "error": "ShellCheck unavailable",
+        "issues": [],
+    }
+
+    eval_report = scanner.scan_shell("eval \"$user_input\"\n", "eval.sh")
+    scoped_delete_report = scanner.scan_shell("rm -rf /tmp/build\n", "cleanup.sh")
+
+    assert eval_report.risk_level is module.RiskLevel.CRITICAL
+    assert eval_report.passed is False
+    assert scoped_delete_report.risk_level is module.RiskLevel.LOW
+    assert not any(
+        finding.category == "dangerous_pattern"
+        for finding in scoped_delete_report.findings
+    )
+
+
 def test_unsupported_language_returns_low_risk_finding():
     module = load_security_module()
     report = module.scan_code("console.log('ok')", "sample.js", "javascript")
