@@ -744,6 +744,8 @@ class CodeSecurityScanner:
     def scan_shell(self, code: str, file_path: str = "") -> SecurityReport:
         """扫描 Shell 代码"""
         report = SecurityReport(file_path=file_path)
+
+        self._check_shell_dangerous_patterns(code, report)
         
         # ShellCheck 检查
         shellcheck_result = self.shellcheck_checker.check(code, file_path)
@@ -786,6 +788,30 @@ class CodeSecurityScanner:
         
         self._generate_summary(report)
         return report
+
+    def _check_shell_dangerous_patterns(self, code: str, report: SecurityReport):
+        """Catch critical shell commands even when ShellCheck is unavailable."""
+        dangerous_patterns = [
+            (
+                r"(?<![\w.-])rm\s+(?:--no-preserve-root\s+)?(?:-[a-zA-Z]*r[a-zA-Z]*f[a-zA-Z]*|-[a-zA-Z]*f[a-zA-Z]*r[a-zA-Z]*)\s+(?:--no-preserve-root\s+)?(?:--\s+)?/(?:\s|$)",
+                "递归删除文件系统根目录",
+            ),
+            (r"(?<![\w.-])eval\s+\S", "使用 eval 执行动态 Shell 代码"),
+        ]
+
+        for line_number, line in enumerate(code.splitlines(), 1):
+            for pattern, message in dangerous_patterns:
+                if re.search(pattern, line):
+                    report.add_finding(SecurityFinding(
+                        level=RiskLevel.CRITICAL,
+                        category="dangerous_pattern",
+                        message=message,
+                        line=line_number,
+                        code_snippet=line.strip(),
+                        suggestion="移除危险命令或改用受限、安全的替代方案",
+                        file_path=report.file_path,
+                        tool="pattern_checker",
+                    ))
     
     def _check_dangerous_patterns(self, code: str, report: SecurityReport):
         """检查危险模式"""
