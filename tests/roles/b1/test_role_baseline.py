@@ -134,6 +134,34 @@ class B1BaselineTests(unittest.TestCase):
                          {"type": "python", "size": "S"})
         self.assertEqual(plugin._assess_project("\t JavaScript parser \n")["type"], "js")
 
+    def test_command_separator_whitespace_preserves_requirement_line_endings(self):
+        plugin = self.make_plugin()
+        self.assertEqual(
+            plugin._extract_requirement("/agent \r\n  build parser\r\nwith tests\t "),
+            "build parser\r\nwith tests",
+        )
+        self.assertEqual(plugin._extract_requirement("/agent\t编写计算器"), "编写计算器")
+
+    def test_unicode_size_boundaries_count_characters_after_trimming(self):
+        plugin = self.make_plugin()
+        for length, expected in ((29, "S"), (30, "M"), (99, "M"), (100, "L")):
+            with self.subTest(length=length):
+                self.assertEqual(
+                    plugin._assess_project("\t" + "界" * length + "\r\n"),
+                    {"type": "python", "size": expected},
+                )
+
+    def test_project_keyword_after_line_break_is_classified(self):
+        plugin = self.make_plugin()
+        self.assertEqual(
+            plugin._assess_project("Please build a\nJavaScript parser")["type"], "js"
+        )
+
+    def test_numeric_group_blacklist_does_not_block_unrelated_context(self):
+        plugin = self.make_plugin({"admin_blacklist": [], "group_blacklist": [123]})
+        self.assertTrue(plugin._is_in_blacklist("user", "123"))
+        self.assertFalse(plugin._is_in_blacklist("123", "456"))
+
 
 if __name__ == "__main__":
     unittest.main()
