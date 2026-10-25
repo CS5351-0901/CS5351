@@ -309,6 +309,86 @@ class A2OrchestrationTests(unittest.IsolatedAsyncioTestCase):
         deps.assert_called_once_with()
         self.process_guard.assert_not_called()
 
+    async def test_unstarted_generator_close_does_not_remove_existing_session(self):
+        existing = {"active": True, "requirement": "already running"}
+        self.plugin.active_sessions["group_user"] = existing
+        command = self.plugin.agent_command(Event())
+        await command.aclose()
+        self.assertIs(self.plugin.active_sessions["group_user"], existing)
+        self.assert_no_pipeline()
+
+    async def test_interleaved_users_keep_independent_session_lifetimes(self):
+        other_event = Event()
+        other_event.get_sender_id = lambda: "other"
+        first = self.plugin.agent_command(Event())
+        second = self.plugin.agent_command(other_event)
+        try:
+            await anext(first)
+            await anext(second)
+            second_session = self.plugin.active_sessions["group_other"]
+            await first.aclose()
+            self.assertNotIn("group_user", self.plugin.active_sessions)
+            self.assertIs(self.plugin.active_sessions["group_other"], second_session)
+        finally:
+            await first.aclose()
+            await second.aclose()
+        self.assertEqual(self.plugin.active_sessions, {})
+        self.assert_no_pipeline()
+
+    async def test_zero_debug_budget_skips_execution_and_packaging(self):
+        self.plugin.config["max_debug_rounds"] = 0
+        replies = await self.run_command()
+        self.assertTrue(replies)
+        self.assertEqual(self.stages, ["process"])
+        self.plugin._call_sandbox.assert_not_called()
+        self.plugin._call_security_scan.assert_not_called()
+        self.plugin._call_packager.assert_not_called()
+        self.assertEqual(self.plugin.active_sessions, {})
+
+    async def test_last_allowed_retry_success_continues_once(self):
+        self.plugin._call_sandbox.side_effect = [
+            {"success": False, "error": "fixture retry"},
+            {"success": True},
+        ]
+        await self.run_command()
+        self.assertEqual(self.plugin._call_sandbox.call_count, 2)
+        self.plugin._call_security_scan.assert_called_once()
+        self.plugin._save_snapshot.assert_called_once()
+        self.plugin._call_packager.assert_called_once()
+        self.assertEqual(self.plugin.active_sessions, {})
+
+    async def test_malformed_sandbox_result_stops_downstream_work(self):
+        self.plugin._call_sandbox.side_effect = None
+        self.plugin._call_sandbox.return_value = None
+        replies = await self.run_command()
+        self.assertTrue(replies)
+        self.plugin.logger.error.assert_called_once()
+        self.plugin._call_security_scan.assert_not_called()
+        self.plugin._save_snapshot.assert_not_called()
+        self.plugin._call_packager.assert_not_called()
+        self.assertEqual(self.plugin.active_sessions, {})
+
+    async def test_snapshot_failure_prevents_packaging_and_releases_session(self):
+        self.plugin._save_snapshot.side_effect = OSError("fixture disk full")
+        replies = await self.run_command()
+        self.assertIn("fixture disk full", replies[-1])
+        self.plugin._call_security_scan.assert_called_once()
+        self.plugin._call_packager.assert_not_called()
+        self.assertEqual(self.plugin.active_sessions, {})
+
+    async def test_reply_rendering_failure_propagates_after_cleanup(self):
+        event = Event()
+        event.plain_result = Mock(side_effect=RuntimeError("fixture reply failure"))
+        command = self.plugin.agent_command(event)
+        try:
+            with self.assertRaisesRegex(RuntimeError, "fixture reply failure"):
+                await anext(command)
+        finally:
+            await command.aclose()
+        self.plugin.logger.error.assert_called_once()
+        self.assertEqual(self.plugin.active_sessions, {})
+        self.assert_no_pipeline()
+
     def test_factory_forwards_context_and_config(self):
         context = object()
         config = {"quality_threshold": 91, "admin_blacklist": ["blocked"]}
