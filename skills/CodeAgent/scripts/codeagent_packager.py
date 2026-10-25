@@ -476,6 +476,7 @@ class ProjectPackager:
                     tests_dir.mkdir(parents=True, exist_ok=True)
                     for file in project.test_files:
                         file_path = tests_dir / file.name
+                        file_path.parent.mkdir(parents=True, exist_ok=True)
                         file_path.write_text(file.content, encoding='utf-8')
                 
                 readme_content = ReadmeGenerator.generate(project)
