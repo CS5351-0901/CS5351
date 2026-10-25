@@ -10,8 +10,6 @@ import re
 import time
 import shutil
 import subprocess
-import sys
-import tempfile
 import asyncio
 import platform
 import urllib.request
@@ -214,6 +212,9 @@ class CodeAgentPlugin(Star):
                 self.logger.warning(f"JS 依赖安装异常: {e}")
     
     def _call_sandbox(self, code: str, session_id: str, language: str = 'python', filename: str = 'main.py') -> Dict[str, Any]:
+        import sys
+        import tempfile
+
         sandbox_script = self.scripts_dir / "codeagent_sandbox.py"
         if not sandbox_script.exists():
             return {'success': False, 'error': 'Sandbox script not found'}

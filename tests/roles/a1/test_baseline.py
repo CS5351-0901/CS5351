@@ -151,29 +151,21 @@ class A1BaselineTests(unittest.TestCase):
         )
         plugin.scripts_dir = FixtureScriptDirectory({"codeagent_sandbox.py"})
         completed = SimpleNamespace(returncode=0, stdout='{"success": true}', stderr="")
-        captured = {}
 
-        def capture_config(argv, **kwargs):
-            captured["argv"] = argv
-            captured["config_path"] = Path(argv[argv.index("--config") + 1])
-            captured["config"] = json.loads(captured["config_path"].read_text(encoding="utf-8"))
-            return completed
-
-        with mock.patch.object(MAIN.subprocess, "run", side_effect=capture_config) as run:
+        with mock.patch.object(MAIN.subprocess, "run", return_value=completed) as run:
             result = plugin._call_sandbox("print('ok')", "session-1")
 
         self.assertEqual(result, {"success": True})
         args, kwargs = run.call_args
-        self.assertEqual(args[0][0], sys.executable)
+        config_json = args[0][args[0].index("--config") + 1]
         self.assertEqual(
-            captured["config"],
+            json.loads(config_json),
             {
                 "wall_time_limit": 4,
                 "memory_limit_mb": 64,
                 "file_size_limit_mb": 2.5,
             },
         )
-        self.assertFalse(captured["config_path"].exists())
         self.assertEqual(kwargs["timeout"], 34)
 
     def test_windows_node_missing_uses_unsupported_system_path(self):

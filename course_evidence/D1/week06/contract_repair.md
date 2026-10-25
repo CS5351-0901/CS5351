@@ -25,15 +25,15 @@ BRANCH: course/d1
   with an error.
 
 The five former `unittest.expectedFailure` markers were removed after their
-contracts passed. The A1 baseline assertion that described the old inline-JSON
-configuration contract was updated to read the temporary configuration file while
-the mocked child is running. No A1 production logic was changed.
+contracts passed. The ownership policy reserves `tests/roles/a1/**` for A1, so
+this D1 change does not modify A1's inline-JSON assertion. A1 must update that
+assertion to read the new configuration-file contract before the cross-role
+suite can pass against this branch.
 
 ## Engineering files
 
 - `main.py`
 - `tests/roles/d1/test_baseline.py`
-- `tests/roles/a1/test_baseline.py`
 
 ## Validation
 
@@ -45,8 +45,9 @@ python -B -m unittest discover -s tests/roles/d1 -p test_*.py -v
 
 Observed: 25 tests ran; all passed; exit code 0. There are no expected failures.
 
-The final integration checks recorded with the Week 7 evidence also show A1 at
-8 passing tests and B1 at 7 passing tests.
+The D1-owned suite is the acceptance gate for this change. A1's current Week 5
+assertion still describes the old inline-JSON contract and is a cross-role
+migration dependency, not a D1-owned test file.
 
 ## Boundary
 

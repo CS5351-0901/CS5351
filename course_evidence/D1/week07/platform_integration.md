@@ -47,9 +47,6 @@ Validation commands and observed results:
 python -B -m unittest discover -s tests/roles/d1 -p test_*.py -v
 25 tests, OK
 
-python -B -m unittest discover -s tests/roles/a1 -p test_baseline.py -v
-8 tests, OK
-
 python -B -m unittest discover -s tests/roles/b1 -p test_*.py -v
 7 tests, OK
 
@@ -70,11 +67,14 @@ Python files were parsed with `ast.parse` without writing bytecode cache files.
   `resource` module is unavailable. The sandbox therefore does not claim enforced
   CPU, memory, or process limits on Windows.
 - Network isolation and whitelist enforcement remain unverified.
+- A1's Week 5 sandbox configuration assertion still expects inline JSON and must
+  be migrated by its owner to the new readable-file contract.
 - ESLint and TypeScript correctness were not exercised because their local
   `node_modules` dependencies are not installed in this checkout. Missing-tool
   reporting and project-local discovery behavior are covered structurally.
 - Commit `e74446e0f2f816df18f3536330607a4f846a5029` was pushed to
   `origin/course/d1`. The follow-up commit containing this automated adapter
   integration test and evidence correction is reported in the delivery response.
-- A pull request is still pending GitHub authentication. No pull request or D2
-  review is claimed by this evidence file.
+- Sprint 2 PR #15 is open at
+  `https://github.com/CS5351-0901/CS5351/pull/15`. Its final ownership result and
+  D2 review are not claimed here; Sprint 2 integration is scheduled for Week 9.
