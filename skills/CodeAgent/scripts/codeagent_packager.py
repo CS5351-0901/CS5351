@@ -516,12 +516,13 @@ class ProjectPackager:
                             file_path = Path(root) / file
                             arcname = file_path.relative_to(temp_dir)
                             zf.write(file_path, arcname)
+                    file_count = len(zf.infolist())
                 
                 size = zip_path.stat().st_size
                 
                 result['success'] = True
                 result['zip_path'] = str(zip_path)
-                result['file_count'] = len(project.files) + len(project.test_files) + 2
+                result['file_count'] = file_count
                 result['size'] = size
                 
             finally:
