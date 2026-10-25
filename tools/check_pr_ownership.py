@@ -5,6 +5,8 @@ import subprocess
 import sys
 
 ROLES = ("a1","a2","b1","b2","c1","c2","d1","d2")
+# V3 support directories are exclusive to B1/B2 from Week 6.
+SUPPORT_DIRS = {"b1": "course_tools/b1_support/", "b2": "course_tools/b2_support/"}
 REPO = "CS5351-0901/CS5351"
 EXACT = {
  "a1":{"metadata.yaml","_conf_schema.json","pyproject.toml"},
@@ -44,6 +46,7 @@ def allowed(role,path):
         return False
     return (path.startswith("course_evidence/"+role.upper()+"/")
         or path.startswith("tests/roles/"+role+"/")
+        or path.startswith(SUPPORT_DIRS.get(role, "\0"))
         or path in EXACT[role] or path=="main.py")
 
 def symbols(text):
@@ -87,6 +90,86 @@ def check(branch,author,head_repo,paths,before=None,after=None):
                 errors.append("main.py failed to parse: "+str(e))
     return errors
 
+
+def check_support_commit_scope(role, changes):
+    """Each commit touching B support must contain only that support and own evidence."""
+    prefix = SUPPORT_DIRS.get(role)
+    if prefix is None:
+        return []
+    evidence = "course_evidence/" + role.upper() + "/"
+    violations = []
+    for sha, paths in changes:
+        if not any(path.startswith(prefix) for path in paths):
+            continue
+        for path in paths:
+            if not (path.startswith(prefix) or path.startswith(evidence)):
+                violations.append(
+                    "support commit " + sha[:12] + ": " + path
+                    + " outside " + role.upper() + " isolated support-only scope"
+                )
+    return violations
+
+
+def check_support_imports(role, path, code):
+    """Statically reject external/project imports from B support Python files."""
+    prefix = SUPPORT_DIRS.get(role)
+    if not prefix or not path.startswith(prefix) or not path.endswith(".py"):
+        return []
+    try:
+        tree = ast.parse(code, filename=path)
+    except SyntaxError as exc:
+        return [path + ": invalid Python syntax: " + str(exc)]
+    standard = sys.stdlib_module_names | set(sys.builtin_module_names)
+    own = "course_tools." + role + "_support"
+    errors = []
+    for node in ast.walk(tree):
+        names = []
+        if isinstance(node, ast.Import):
+            names = [item.name for item in node.names]
+        elif isinstance(node, ast.ImportFrom):
+            if node.level:
+                if node.level > 1:
+                    errors.append(path + ": relative import leaves support package")
+                continue
+            names = [node.module or ""]
+        for name in names:
+            if name.split(".")[0] in standard:
+                continue
+            if name == own or name.startswith(own + "."):
+                continue
+            errors.append(path + ": forbidden third-party/cross-role import " + name)
+    return errors
+
+
+def verify_support_revision(base, head, role):
+    prefix = SUPPORT_DIRS.get(role)
+    if not prefix:
+        return []
+    ancestor = git("merge-base", base, head).decode().strip()
+    changes = []
+    revisions = git("rev-list", "--reverse", ancestor + ".." + head).decode().splitlines()
+    for sha in revisions:
+        paths = [
+            item.decode("utf-8", "surrogateescape")
+            for item in git("diff-tree", "--no-commit-id", "--name-only", "-r", "-z", sha).split(b"\0")
+            if item
+        ]
+        changes.append((sha, paths))
+    issues = check_support_commit_scope(role, changes)
+    files = [
+        item.decode("utf-8", "surrogateescape")
+        for item in git("ls-tree", "-r", "--name-only", "-z", head, "--", prefix).split(b"\0")
+        if item
+    ]
+    for path in files:
+        if path.endswith(".py"):
+            code = git("show", head + ":" + path).decode("utf-8-sig")
+            issues.extend(check_support_imports(role, path, code))
+            if path.rsplit("/", 1)[-1].startswith("test_"):
+                issues.append(path + ": use check_*.py for opt-in support checks")
+    return issues
+
+
 def git(*args):
     return subprocess.check_output(["git",*args])
 
@@ -106,6 +189,7 @@ def main():
             before=git("show",args.base+":main.py").decode("utf-8-sig")
             after=git("show",args.head+":main.py").decode("utf-8-sig")
         errors=check(args.branch,args.author,args.head_repo,paths,before,after)
+        errors.extend(verify_support_revision(args.base,args.head,role))
     except (ValueError,OSError,subprocess.CalledProcessError,UnicodeError) as exc:
         print("OWNERSHIP FAIL:",exc,file=sys.stderr)
         return 1

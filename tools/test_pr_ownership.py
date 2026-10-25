@@ -51,4 +51,39 @@ class OwnershipTests(unittest.TestCase):
   ]
   errors=self.check("d2",paths)
   self.assertEqual(len(errors),3)
+
+ def test_v3_b1_b2_support_is_exclusive(self):
+  b1=["course_tools/b1_support/models.py","course_tools/b1_support/checks/check_path_rules.py"]
+  b2=["course_tools/b2_support/case_models.py","course_tools/b2_support/checks/check_deterministic.py"]
+  self.assertEqual(self.check("b1",b1),[])
+  self.assertEqual(self.check("b2",b2),[])
+  self.assertEqual(len(self.check("b1",b2)),2)
+  self.assertEqual(len(self.check("b2",b1)),2)
+  self.assertTrue(self.check("d2",b1))
+  self.assertTrue(self.check("a1",b2))
+  self.assertTrue(self.check("b1",["course_tools/other/file.py"]))
+  self.assertTrue(self.check("b2",["course_evidence/team/week06/notes.md"]))
+
+ def test_v3_support_commit_cannot_mix_original_work(self):
+  ident="f"*40
+  self.assertEqual(g.check_support_commit_scope("b1",[(ident,[
+   "course_tools/b1_support/models.py","course_evidence/B1/week07/support.md"
+  ])]),[])
+  errors=g.check_support_commit_scope("b1",[(ident,[
+   "course_tools/b1_support/models.py","main.py",
+   "tests/roles/b1/test_role_baseline.py","course_tools/b2_support/path.py"
+  ])])
+  self.assertEqual(len(errors),3)
+  self.assertEqual(g.check_support_commit_scope("b2",[(ident,[
+   "main.py","tests/roles/b2/test_role_b2.py"
+  ])]),[])
+
+ def test_v3_support_only_stdlib_and_own_imports(self):
+  valid="import os\nfrom pathlib import Path\nfrom course_tools.b1_support.models import Item\nfrom .models import Item\n"
+  self.assertEqual(g.check_support_imports("b1","course_tools/b1_support/models.py",valid),[])
+  invalid="import main\nimport pytest\nfrom skills.CodeAgent import SKILL\nfrom course_tools.b2_support.models import Result\n"
+  self.assertEqual(len(g.check_support_imports("b1","course_tools/b1_support/models.py",invalid)),4)
+  self.assertTrue(g.check_support_imports("b2","course_tools/b2_support/checks/file.py","from ..b1_support import something"))
+  self.assertTrue(g.check_support_imports("b1","course_tools/b1_support/broken.py","def broken("))
+
 if __name__=="__main__":unittest.main(verbosity=2)
