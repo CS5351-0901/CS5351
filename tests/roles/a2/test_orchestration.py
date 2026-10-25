@@ -1,6 +1,7 @@
 """A2 orchestration baseline using real command code and controlled boundaries."""
 
 import importlib.util
+import asyncio
 import sys
 import tempfile
 import types
@@ -216,6 +217,83 @@ class A2OrchestrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.plugin.active_sessions, {})
         self.assertTrue(all(not session["active"] for session in sessions))
         self.assertEqual(list(self.workspace.iterdir()), [])
+        self.assert_no_pipeline()
+
+    async def test_closing_command_releases_session_before_retry(self):
+        command = self.plugin.agent_command(Event())
+        await anext(command)
+        self.assertIn("group_user", self.plugin.active_sessions)
+        await command.aclose()
+        self.assertEqual(self.plugin.active_sessions, {})
+        retry = self.plugin.agent_command(Event())
+        try:
+            await anext(retry)
+            self.assertIn("group_user", self.plugin.active_sessions)
+        finally:
+            await retry.aclose()
+        self.assertEqual(self.plugin.active_sessions, {})
+        self.assert_no_pipeline()
+
+    async def test_cancellation_during_wait_propagates_and_releases_session(self):
+        waiting = asyncio.Event()
+        blocked = asyncio.Event()
+
+        async def pause(_seconds):
+            waiting.set()
+            await blocked.wait()
+
+        async def consume():
+            async for _reply in self.plugin.agent_command(
+                Event("/agent " + "x" * 40)
+            ):
+                pass
+
+        with patch.object(MAIN.asyncio, "sleep", side_effect=pause):
+            task = asyncio.create_task(consume())
+            try:
+                await asyncio.wait_for(waiting.wait(), timeout=2)
+                self.assertIn("group_user", self.plugin.active_sessions)
+                task.cancel()
+                with self.assertRaises(asyncio.CancelledError):
+                    await task
+                self.assertEqual(self.plugin.active_sessions, {})
+                self.plugin._call_sandbox.assert_not_called()
+                self.plugin._call_packager.assert_not_called()
+                self.plugin.logger.error.assert_not_called()
+            finally:
+                task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
+
+    async def test_closing_error_reply_still_releases_session(self):
+        self.plugin._call_sandbox.side_effect = RuntimeError("fixture crash")
+        command = self.plugin.agent_command(Event())
+        try:
+            async for reply in command:
+                if "fixture crash" in reply:
+                    break
+            else:
+                self.fail("The command did not yield its error reply")
+        finally:
+            await command.aclose()
+        self.assertEqual(self.plugin.active_sessions, {})
+        self.plugin._call_packager.assert_not_called()
+
+    async def test_old_command_close_preserves_replacement_session(self):
+        old_command = self.plugin.agent_command(Event())
+        await anext(old_command)
+        await self.plugin.terminate()
+        replacement = self.plugin.agent_command(Event())
+        try:
+            await anext(replacement)
+            current_session = self.plugin.active_sessions["group_user"]
+            await old_command.aclose()
+            self.assertIs(
+                self.plugin.active_sessions["group_user"], current_session
+            )
+        finally:
+            await old_command.aclose()
+            await replacement.aclose()
+        self.assertEqual(self.plugin.active_sessions, {})
         self.assert_no_pipeline()
 
     def test_constructor_initializes_state_with_environment_helpers_isolated(self):
