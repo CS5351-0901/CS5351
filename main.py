@@ -379,7 +379,7 @@ class CodeAgentPlugin(Star):
         error_type = error_info.get('error_type', '')
         error_message = error_info.get('error_message', '')
         
-        if 'Import' in error_type:
+        if 'Import' in error_type or error_type == 'ModuleNotFoundError':
             missing = re.search(r"No module named '([^']+)'", error_message)
             if missing:
                 return f"在 requirements.txt 中添加 {missing.group(1)}"
@@ -708,5 +708,6 @@ def test_main():
         self.logger.info("CodeAgent 插件已卸载")
 
 
-def get_star(context: Context):
-    return CodeAgentPlugin(context)
+def get_star(context: Context, config: AstrBotConfig):
+    """Create the plugin with the caller-provided context and configuration."""
+    return CodeAgentPlugin(context=context, config=config)
