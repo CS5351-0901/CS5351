@@ -4,6 +4,8 @@
 
 Reviewed `origin/main` at `6b0472c36ffd09c6bfe6e647380cd0d0799ea076` against the C1 branch base. The recent main changes update team Week 7 verification status, PR ownership rules, and the ownership checker/tests. They do not modify `main.py` or `tests/roles/c1/**` relative to the Week 6 integration point.
 
+The team-level Week 8 report was merged into `main` after this review snapshot. Its C1 status table reflects an earlier scan at commit `65a3eec`, before C1 Week 7 and Week 8 were submitted; that pending label is historical and does not describe the current C1 branch.
+
 The Week 5 C1 baseline is already integrated in `main`. Week 6 snapshot naming and Week 7 step validation/tests remain on `course/c1` for the Sprint 2 review scheduled at Week 9. No interface conflict or change to the C1 helper call contract was found in the current main changes.
 
 ## Validation rerun
