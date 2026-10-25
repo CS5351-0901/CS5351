@@ -34,6 +34,8 @@ The D1 suite now covers the previously known failure paths plus:
 
 - a real Windows sandbox command with multiline Unicode input and a configuration
   path containing spaces;
+- a real adapter-to-sandbox subprocess integration test, including raw multiline
+  Unicode source and Windows execution;
 - a workspace path containing spaces;
 - the current Python interpreter being used by both adapter and sandbox;
 - two checker instances owning independent temporary directories;
@@ -43,7 +45,7 @@ Validation commands and observed results:
 
 ```text
 python -B -m unittest discover -s tests/roles/d1 -p test_*.py -v
-24 tests, OK
+25 tests, OK
 
 python -B -m unittest discover -s tests/roles/a1 -p test_baseline.py -v
 8 tests, OK
@@ -71,5 +73,8 @@ Python files were parsed with `ast.parse` without writing bytecode cache files.
 - ESLint and TypeScript correctness were not exercised because their local
   `node_modules` dependencies are not installed in this checkout. Missing-tool
   reporting and project-local discovery behavior are covered structurally.
-- The changes are present in the local working tree for review; no push or pull
-  request is claimed by this evidence file.
+- Commit `e74446e0f2f816df18f3536330607a4f846a5029` was pushed to
+  `origin/course/d1`. The follow-up commit containing this automated adapter
+  integration test and evidence correction is reported in the delivery response.
+- A pull request is still pending GitHub authentication. No pull request or D2
+  review is claimed by this evidence file.

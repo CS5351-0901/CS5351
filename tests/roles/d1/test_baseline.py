@@ -169,6 +169,22 @@ class AdapterBaseline(unittest.TestCase):
             result = self.plugin._call_js_checker("const x = 1;")
         self.assertFalse(result["passed"])
 
+    @unittest.skipUnless(sys.platform == "win32", "Windows integration path")
+    def test_real_adapter_sandbox_executes_multiline_unicode(self):
+        code = 'print("你好")\nprint("adapter path")'
+        with tempfile.TemporaryDirectory(prefix="d1 adapter sandbox ") as directory:
+            old_cwd = os.getcwd()
+            try:
+                os.chdir(directory)
+                result = self.plugin._call_sandbox(code, "d1 integration")
+            finally:
+                os.chdir(old_cwd)
+
+        self.assertTrue(result["success"], result)
+        self.assertEqual(result["execution_method"], "standard")
+        self.assertIn("你好", result["stdout"])
+        self.assertIn("adapter path", result["stdout"])
+
 
 @unittest.skipUnless(NODE, "Node.js is required for real checker CLI tests")
 class CheckerCliBaseline(unittest.TestCase):

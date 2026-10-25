@@ -43,7 +43,7 @@ Final D1 suite:
 python -B -m unittest discover -s tests/roles/d1 -p test_*.py -v
 ```
 
-Observed: 24 tests ran; all passed; exit code 0. There are no expected failures.
+Observed: 25 tests ran; all passed; exit code 0. There are no expected failures.
 
 The final integration checks recorded with the Week 7 evidence also show A1 at
 8 passing tests and B1 at 7 passing tests.
