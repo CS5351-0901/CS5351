@@ -24,6 +24,7 @@ Design notes:
 """
 
 import json
+import os
 import shutil
 import sys
 import tempfile
@@ -278,6 +279,67 @@ class B2ActiveSessionsConsistencyTest(unittest.TestCase):
 
         self.assertNotIn(sid, self.plugin.active_sessions)
         self.assertFalse(session_dir.exists())
+
+
+class B2Week6BoundaryTest(unittest.TestCase):
+    """Week 6 verification enhancement: boundary & failure-path cases.
+
+    Adds executable coverage for edges recorded in Week 3 findings that were
+    previously marked NOT_RUN: separator edge cases, Unicode input, and the
+    silent-residue semantics of _cleanup_session on a read-only path
+    (shutil.rmtree with ignore_errors=True).
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.plugin = make_plugin(self.tmp)
+
+    def tearDown(self):
+        shutil.rmtree(self.plugin.workspace, ignore_errors=True)
+
+    def test_sanitize_empty_components(self):
+        # Empty group/user still yields a deterministic, non-empty id.
+        self.assertEqual(self.plugin._sanitize_session_id("", ""), "_")
+        self.assertEqual(self.plugin._sanitize_session_id("g", ""), "g_")
+
+    def test_sanitize_unicode_components(self):
+        # Unicode group/user pass through unchanged apart from the separators.
+        self.assertEqual(self.plugin._sanitize_session_id("群组", "用户"), "群组_用户")
+
+    def test_exit_command_with_trailing_whitespace(self):
+        self.assertTrue(self.plugin._is_exit_command("/exitconver  "))
+        self.assertTrue(self.plugin._is_exit_command("\n/exitconver\n"))
+
+    def test_cleanup_readonly_residue_does_not_raise(self):
+        # A read-only file makes shutil.rmtree fail to remove it; with
+        # ignore_errors=True the call must not raise (silent residue).
+        session_dir = self.plugin.workspace / "ro_sess"
+        session_dir.mkdir(parents=True)
+        locked = session_dir / "locked.txt"
+        locked.write_text("x", encoding="utf-8")
+        os.chmod(str(locked), 0o444)
+
+        # Must not raise despite the read-only file.
+        self.plugin._cleanup_session("ro_sess")
+
+    def test_process_json_unicode_requirement(self):
+        data = self.plugin._create_process_json(
+            "g_u", "写一个计算器 计算 圆周率 π", "python", "S"
+        )
+        process_file = self.plugin.workspace / "g_u" / "process.json"
+        with open(process_file, encoding="utf-8") as f:
+            on_disk = json.load(f)
+        self.assertEqual(on_disk["requirement"], "写一个计算器 计算 圆周率 π")
+        self.assertEqual(on_disk, data)
+
+    def test_active_sessions_dedup_key(self):
+        # The same group/user must occupy exactly one table entry.
+        sid_a = self.plugin._sanitize_session_id("g1", "u1")
+        sid_b = self.plugin._sanitize_session_id("g1", "u1")
+        self.plugin.active_sessions[sid_a] = {"active": True}
+        self.plugin.active_sessions[sid_b] = {"active": True}
+        self.assertEqual(len(self.plugin.active_sessions), 1)
+        self.assertIn(sid_a, self.plugin.active_sessions)
 
 
 if __name__ == "__main__":
