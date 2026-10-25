@@ -342,5 +342,63 @@ class B2Week6BoundaryTest(unittest.TestCase):
         self.assertIn(sid_a, self.plugin.active_sessions)
 
 
+class B2Week7ContractTest(unittest.TestCase):
+    """Week 7 contract verification.
+
+    Locks down cross-function contracts between the B2-owned responsibilities:
+    process.json field semantics, table/dir lifecycle consistency, idempotence,
+    key uniqueness, and the exit path using a single session id.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.plugin = make_plugin(self.tmp)
+
+    def tearDown(self):
+        shutil.rmtree(self.plugin.workspace, ignore_errors=True)
+
+    def test_process_json_contract_fields(self):
+        data = self.plugin._create_process_json("s1", "req", "web", "M")
+        self.assertEqual(data["status"], "init")
+        self.assertEqual(data["current_step"], "requirement_analysis")
+        self.assertIsInstance(data["completed_steps"], list)
+        self.assertIsInstance(data["snapshots"], list)
+        # created_at / updated_at are numeric timestamps.
+        self.assertIsInstance(data["created_at"], (int, float))
+        self.assertIsInstance(data["updated_at"], (int, float))
+
+    def test_distinct_groups_do_not_collide(self):
+        a = self.plugin._sanitize_session_id("g1", "u1")
+        b = self.plugin._sanitize_session_id("g1", "u2")
+        c = self.plugin._sanitize_session_id("g2", "u1")
+        self.assertEqual(len({a, b, c}), 3)
+
+    def test_exit_path_uses_same_session_id(self):
+        # The session id used to register, to create process.json, and to clean
+        # up must be identical (the exit-path key).
+        sid = self.plugin._sanitize_session_id("g1", "u1")
+        self.plugin.active_sessions[sid] = {"active": True}
+        self.plugin._create_process_json(sid, "req", "python", "S")
+
+        self.plugin.active_sessions[sid]["active"] = False
+        self.plugin._cleanup_session(sid)
+
+        self.assertFalse((self.plugin.workspace / sid).exists())
+
+    def test_cleanup_keeps_table_consistent(self):
+        # After cleanup, a dropped session's process file no longer exists.
+        sid = self.plugin._sanitize_session_id("g1", "u1")
+        self.plugin._create_process_json(sid, "req", "python", "S")
+        self.plugin._cleanup_session(sid)
+        self.assertFalse((self.plugin.workspace / sid / "process.json").exists())
+
+    def test_create_is_idempotent_for_same_key(self):
+        # Calling twice on the same key yields a consistent schema.
+        first = self.plugin._create_process_json("k", "r", "python", "S")
+        second = self.plugin._create_process_json("k", "r", "python", "S")
+        self.assertEqual(first["session_id"], second["session_id"])
+        self.assertEqual(first["status"], second["status"])
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
