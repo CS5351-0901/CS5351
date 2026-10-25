@@ -136,6 +136,22 @@ class C1BaselineTests(unittest.TestCase):
             self.assertEqual(restored["code"], "selected")
             self.assertEqual(restored["step"], "core_complete")
 
+    def test_rollback_rejects_glob_pattern_as_step(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            self.plugin.workspace = Path(temp_dir)
+            self.plugin._save_snapshot("session", "core_complete", "saved", [])
+
+            self.assertIsNone(self.plugin._rollback_to_snapshot("session", "core*"))
+
+    def test_save_rejects_path_syntax_in_step(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            self.plugin.workspace = Path(temp_dir)
+
+            with self.assertRaisesRegex(ValueError, "Invalid snapshot step"):
+                self.plugin._save_snapshot("session", "../outside", "code", [])
+
+            self.assertFalse((Path(temp_dir) / "session" / "snapshots").exists())
+
     def test_rollback_without_snapshot_returns_none(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             self.plugin.workspace = Path(temp_dir)
