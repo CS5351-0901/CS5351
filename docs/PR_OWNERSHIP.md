@@ -25,6 +25,12 @@ The required ownership workflow now checks these commit boundaries.
 Support code must use standard-library or its own package imports.
 The workflow statically checks this rule on support Python files; dynamic
 import/side-effect behavior still needs the member's own verification.
+
+Short, unqualified sibling imports (e.g. from case_models import StringCase)
+are permitted only when the PR head contains a matching .py module in
+that role's own support directory root. This does not permit cross-role,
+third-party or plugin runtime imports and is not runtime import validation.
+
 Support checks are named checks/check_*.py to avoid default pytest collection
 and must be run explicitly as specified by the V3 manuals.
 
