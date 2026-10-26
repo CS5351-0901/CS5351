@@ -212,6 +212,9 @@ class CodeAgentPlugin(Star):
                 self.logger.warning(f"JS 依赖安装异常: {e}")
     
     def _call_sandbox(self, code: str, session_id: str, language: str = 'python', filename: str = 'main.py') -> Dict[str, Any]:
+        import sys
+        import tempfile
+
         sandbox_script = self.scripts_dir / "codeagent_sandbox.py"
         if not sandbox_script.exists():
             return {'success': False, 'error': 'Sandbox script not found'}
@@ -220,21 +223,31 @@ class CodeAgentPlugin(Star):
         memory_limit = self._get_config("memory_limit", 512)
         max_file_size = self._get_config("max_file_size", 10)
         
-        config_json = json.dumps({
-            "wall_time_limit": timeout,
-            "memory_limit_mb": memory_limit,
-            "file_size_limit_mb": max_file_size
-        })
-        
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                encoding="utf-8",
+                suffix=".json",
+                delete=False
+            ) as config_file:
+                json.dump({
+                    "wall_time_limit": timeout,
+                    "memory_limit_mb": memory_limit,
+                    "file_size_limit_mb": max_file_size
+                }, config_file)
+                config_path = Path(config_file.name)
+        except OSError as e:
+            return {'success': False, 'error': f'Sandbox config error: {e}'}
+
         try:
             proc = subprocess.run(
                 [
-                    'python3', str(sandbox_script),
-                    '--code', json.dumps(code),
+                    sys.executable, str(sandbox_script),
+                    '--code', code,
                     '--session-id', session_id,
                     '--language', language,
                     '--filename', filename,
-                    '--config', config_json
+                    '--config', str(config_path)
                 ],
                 capture_output=True,
                 text=True,
@@ -247,6 +260,11 @@ class CodeAgentPlugin(Star):
             return {'success': False, 'error': 'Sandbox timeout'}
         except Exception as e:
             return {'success': False, 'error': str(e)}
+        finally:
+            try:
+                config_path.unlink(missing_ok=True)
+            except OSError:
+                pass
     
     def _call_security_scan(self, code: str, language: str = 'python') -> Dict[str, Any]:
         security_script = self.scripts_dir / "codeagent_security.py"
@@ -272,19 +290,19 @@ class CodeAgentPlugin(Star):
         """调用 JavaScript/TypeScript 检查器"""
         checker_script = self.scripts_dir / "codeagent_js_checker.js"
         if not checker_script.exists():
-            return {'passed': True, 'error': 'JS Checker script not found'}
+            return {'passed': False, 'error': 'JS Checker script not found'}
         
         # 检查 Node.js 是否可用
         try:
             subprocess.run(['node', '-v'], capture_output=True, check=True)
-        except:
-            return {'passed': True, 'error': 'Node.js 不可用'}
+        except Exception:
+            return {'passed': False, 'error': 'Node.js 不可用'}
         
         try:
             proc = subprocess.run(
                 [
                     'node', str(checker_script),
-                    '--code', json.dumps(code),
+                    '--code', code,
                     '--language', language
                 ],
                 capture_output=True,
@@ -298,9 +316,9 @@ class CodeAgentPlugin(Star):
                     return {'passed': False, 'error': proc.stderr or 'JS Checker failed'}
             return json.loads(proc.stdout)
         except subprocess.TimeoutExpired:
-            return {'passed': True, 'error': 'JS Checker timeout'}
+            return {'passed': False, 'error': 'JS Checker timeout'}
         except Exception as e:
-            return {'passed': True, 'error': str(e)}
+            return {'passed': False, 'error': str(e)}
     
     def _call_packager(
         self, 

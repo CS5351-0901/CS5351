@@ -88,6 +88,7 @@ class AdapterBaseline(unittest.TestCase):
                           subprocess.CompletedProcess([], 0, '{"success": true}', "")) as run:
             self.plugin._call_sandbox("print(1)", "d1_session", "python", "sample.py")
         argv = run.call_args.args[0]
+        self.assertEqual(argv[0], sys.executable)
         for flag, value in (("--session-id", "d1_session"), ("--language", "python"),
                             ("--filename", "sample.py")):
             self.assertEqual(argv[argv.index(flag) + 1], value)
@@ -117,7 +118,6 @@ class AdapterBaseline(unittest.TestCase):
             result = self.plugin._call_js_checker("x")
         self.assertEqual(result, {"passed": False, "error": "checker crashed"})
 
-    @unittest.expectedFailure
     def test_known_d1_001_sandbox_receives_raw_code(self):
         code = 'print("你好")\nprint("second line")'
         with patch.object(self.module.subprocess, "run", return_value=
@@ -126,15 +126,16 @@ class AdapterBaseline(unittest.TestCase):
         argv = run.call_args.args[0]
         self.assertEqual(argv[argv.index("--code") + 1], code)
 
-    @unittest.expectedFailure
     def test_known_d1_002_sandbox_config_is_readable_file(self):
         self.plugin.config = {"code_running_time": 9, "memory_limit": 128, "max_file_size": 2}
         received = []
+        config_paths = []
 
         def capture(argv, **kwargs):
             # Read while the child would run: a temporary file may disappear on return.
+            config_paths.append(Path(argv[argv.index("--config") + 1]))
             try:
-                with open(argv[argv.index("--config") + 1], encoding="utf-8") as stream:
+                with open(config_paths[-1], encoding="utf-8") as stream:
                     received.append(json.load(stream))
             except (OSError, ValueError) as error:
                 received.append(type(error).__name__)
@@ -144,8 +145,8 @@ class AdapterBaseline(unittest.TestCase):
             self.plugin._call_sandbox("print(1)", "session")
         self.assertEqual(received, [{"wall_time_limit": 9, "memory_limit_mb": 128,
                                      "file_size_limit_mb": 2}])
+        self.assertFalse(config_paths[0].exists())
 
-    @unittest.expectedFailure
     def test_known_d1_003_checker_receives_raw_code(self):
         code = 'const greeting = "你好";\nconsole.log(greeting);'
         with patch.object(self.module.subprocess, "run", return_value=
@@ -155,13 +156,11 @@ class AdapterBaseline(unittest.TestCase):
         self.assertEqual(argv[argv.index("--language") + 1], "typescript")
         self.assertEqual(argv[argv.index("--code") + 1], code)
 
-    @unittest.expectedFailure
     def test_known_d1_004_missing_node_must_not_pass(self):
         with patch.object(self.module.subprocess, "run", side_effect=FileNotFoundError("node")):
             result = self.plugin._call_js_checker("const x = 1;")
         self.assertFalse(result["passed"])
 
-    @unittest.expectedFailure
     def test_known_d1_005_checker_timeout_must_not_pass(self):
         with patch.object(self.module.subprocess, "run", side_effect=[
             subprocess.CompletedProcess([], 0, "v22", ""),
@@ -169,6 +168,22 @@ class AdapterBaseline(unittest.TestCase):
         ]):
             result = self.plugin._call_js_checker("const x = 1;")
         self.assertFalse(result["passed"])
+
+    @unittest.skipUnless(sys.platform == "win32", "Windows integration path")
+    def test_real_adapter_sandbox_executes_multiline_unicode(self):
+        code = 'print("你好")\nprint("adapter path")'
+        with tempfile.TemporaryDirectory(prefix="d1 adapter sandbox ") as directory:
+            old_cwd = os.getcwd()
+            try:
+                os.chdir(directory)
+                result = self.plugin._call_sandbox(code, "d1 integration")
+            finally:
+                os.chdir(old_cwd)
+
+        self.assertTrue(result["success"], result)
+        self.assertEqual(result["execution_method"], "standard")
+        self.assertIn("你好", result["stdout"])
+        self.assertIn("adapter path", result["stdout"])
 
 
 @unittest.skipUnless(NODE, "Node.js is required for real checker CLI tests")
@@ -198,6 +213,35 @@ class CheckerCliBaseline(unittest.TestCase):
         self.assertFalse(result["eslint"]["available"])
         self.assertTrue(result["eslint"]["error"])
 
+    def test_checker_instances_use_independent_temp_directories(self):
+        script = """
+import { JavaScriptChecker } from './codeagent_js_checker.js';
+import fs from 'fs';
+import path from 'path';
+
+const first = new JavaScriptChecker();
+const second = new JavaScriptChecker();
+const firstFile = first._setupTempDir('const first = 1;', 'javascript');
+const secondFile = second._setupTempDir('const second = 2;', 'javascript');
+if (path.dirname(firstFile) === path.dirname(secondFile)) {
+    throw new Error('checker instances share a temporary directory');
+}
+first._cleanup();
+if (!fs.existsSync(secondFile)) {
+    throw new Error('cleanup removed another checker instance');
+}
+second._cleanup();
+"""
+        proc = subprocess.run(
+            [NODE, "--input-type=module", "-e", script],
+            cwd=SCRIPTS,
+            env=self.env,
+            capture_output=True,
+            encoding="utf-8",
+            timeout=30,
+        )
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+
     def test_eval_is_rejected_with_line_number_without_executing_input(self):
         proc = self.run_checker("--code", "const x = 1;\neval('1 + 1');")
         self.assertEqual(proc.returncode, 1, proc.stderr)
@@ -206,6 +250,13 @@ class CheckerCliBaseline(unittest.TestCase):
         self.assertEqual(result["security"]["risk_level"], "critical")
         self.assertTrue(any(i["line"] == 2 and i["level"] == "critical"
                             and i["tool"] == "security" for i in result["issues"]))
+
+    def test_function_constructor_rule_ignores_camel_case_names(self):
+        code = "function safeFunction(name) {\n    return name;\n}"
+        proc = self.run_checker("--code", code, "--language", "javascript")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        result = json.loads(proc.stdout)
+        self.assertEqual(result["security"]["issues"], [])
 
     def test_whitespace_input_fails_with_json(self):
         proc = self.run_checker("--code", " \n ")
@@ -250,13 +301,43 @@ class CheckerCliBaseline(unittest.TestCase):
 
 class SandboxPlatformBaseline(unittest.TestCase):
     @unittest.skipUnless(sys.platform == "win32", "Windows-specific import defect")
-    @unittest.expectedFailure
     def test_known_d1_006_windows_sandbox_help_starts(self):
         # --help never executes user code or applies resource limits.
         proc = subprocess.run([sys.executable, str(SCRIPTS / "codeagent_sandbox.py"), "--help"],
                               capture_output=True, encoding="utf-8", timeout=10)
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertIn("--session-id", proc.stdout)
+
+    def test_multiline_unicode_code_runs_with_config_file(self):
+        with tempfile.TemporaryDirectory(prefix="d1 sandbox ") as directory:
+            root = Path(directory)
+            config_path = root / "sandbox config.json"
+            config_path.write_text(json.dumps({
+                "wall_time_limit": 10,
+                "memory_limit_mb": 128,
+                "file_size_limit_mb": 2,
+                "workspace_root": str(root / "workspace with spaces"),
+                "use_restricted_python": False,
+            }), encoding="utf-8")
+            code = 'print("你好")\nprint("second line")'
+            proc = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPTS / "codeagent_sandbox.py"),
+                    "--code", code,
+                    "--session-id", "d1 runtime",
+                    "--config", str(config_path),
+                ],
+                cwd=root,
+                capture_output=True,
+                encoding="utf-8",
+                timeout=20,
+            )
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            result = json.loads(proc.stdout)
+            self.assertTrue(result["success"], result)
+            self.assertIn("你好", result["stdout"])
+            self.assertIn("second line", result["stdout"])
 
 
 if __name__ == "__main__":
