@@ -78,7 +78,12 @@ class SecurityReport:
         self.quality_issues.append(issue)
     
     def to_json(self) -> str:
-        return json.dumps(asdict(self), ensure_ascii=False, indent=2, default=str)
+        return json.dumps(
+            asdict(self),
+            ensure_ascii=False,
+            indent=2,
+            default=lambda value: value.value if isinstance(value, Enum) else str(value),
+        )
 
 
 class RuffChecker:
