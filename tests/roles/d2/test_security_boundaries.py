@@ -97,5 +97,5 @@ def test_scan_code_unknown_language_contract_is_json_serializable():
 
     assert report.risk_level is module.RiskLevel.LOW
     assert report.passed is True
-    assert payload["risk_level"] == "RiskLevel.LOW"
+    assert payload["risk_level"] == "low"
     assert payload["findings"][0]["category"] == "unsupported"

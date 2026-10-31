@@ -3,6 +3,8 @@
 import importlib.util
 import json
 from pathlib import Path
+import subprocess
+import sys
 
 
 SCRIPT_PATH = (
@@ -114,3 +116,24 @@ def test_security_report_json_is_serializable_and_contains_results():
     assert payload["file_path"] == "sample.py"
     assert "quality_score" in payload
     assert "test_results" in payload
+
+
+def test_cli_risk_level_matches_main_security_gate_contract():
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT_PATH),
+            "--code",
+            "result = eval(user_input)",
+            "--language",
+            "python",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    payload = json.loads(result.stdout)
+    assert result.returncode == 1
+    assert payload["risk_level"] == "critical"
+    assert payload["risk_level"] in ["critical", "high"]
