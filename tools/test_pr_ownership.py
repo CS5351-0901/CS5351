@@ -86,4 +86,21 @@ class OwnershipTests(unittest.TestCase):
   self.assertTrue(g.check_support_imports("b2","course_tools/b2_support/checks/file.py","from ..b1_support import something"))
   self.assertTrue(g.check_support_imports("b1","course_tools/b1_support/broken.py","def broken("))
 
+ def test_v3_b2_sibling_short_imports_from_actual_modules(self):
+  path="course_tools/b2_support/checks/check_deterministic.py"
+  valid="import deterministic\nfrom case_models import StringCase\n"
+  self.assertEqual(g.check_support_imports("b2",path,valid,{"deterministic","case_models"}),[])
+  self.assertEqual(len(g.check_support_imports("b2",path,valid)),2)
+  self.assertTrue(g.check_support_imports("b2",path,"import nonexistent\n",{"case_models"}))
+  self.assertTrue(g.check_support_imports("b2",path,"import other_role\n",{"case_models"}))
+  self.assertTrue(g.check_support_imports("b1","course_tools/b1_support/checks/check_metric.py","import deterministic\n",{"models"}))
+
+ def test_v3_sibling_imports_do_not_allow_unsafe_names(self):
+  path="course_tools/b2_support/checks/check_corpus_writer.py"
+  allowed={"corpus_writer","deterministic","case_models"}
+  forbidden="import pytest\nimport main\nfrom course_tools.b1_support.models import Model\nfrom skills.CodeAgent import forbidden\n"
+  self.assertEqual(len(g.check_support_imports("b2",path,forbidden,allowed)),4)
+  self.assertEqual(g.check_support_imports("b2",path,"from corpus_writer import write_corpus\n",allowed),[])
+  self.assertTrue(g.check_support_imports("b2",path,"from ..other_role import outside\n",allowed))
+
 if __name__=="__main__":unittest.main(verbosity=2)

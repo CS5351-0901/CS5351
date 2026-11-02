@@ -110,8 +110,8 @@ def check_support_commit_scope(role, changes):
     return violations
 
 
-def check_support_imports(role, path, code):
-    """Statically reject external/project imports from B support Python files."""
+def check_support_imports(role, path, code, local_modules=()):
+    """Permit only stdlib, own package, and existing own root-level modules."""
     prefix = SUPPORT_DIRS.get(role)
     if not prefix or not path.startswith(prefix) or not path.endswith(".py"):
         return []
@@ -121,6 +121,7 @@ def check_support_imports(role, path, code):
         return [path + ": invalid Python syntax: " + str(exc)]
     standard = sys.stdlib_module_names | set(sys.builtin_module_names)
     own = "course_tools." + role + "_support"
+    local_modules = set(local_modules)
     errors = []
     for node in ast.walk(tree):
         names = []
@@ -136,6 +137,10 @@ def check_support_imports(role, path, code):
             if name.split(".")[0] in standard:
                 continue
             if name == own or name.startswith(own + "."):
+                continue
+            # V3 permits sibling imports such as "from case_models import ...".
+            # The name must resolve to a real .py module in THIS role support root.
+            if name in local_modules:
                 continue
             errors.append(path + ": forbidden third-party/cross-role import " + name)
     return errors
@@ -161,10 +166,16 @@ def verify_support_revision(base, head, role):
         for item in git("ls-tree", "-r", "--name-only", "-z", head, "--", prefix).split(b"\0")
         if item
     ]
+    local_modules = {
+        path[len(prefix):-3]
+        for path in files
+        if path.startswith(prefix) and path.endswith(".py")
+        and "/" not in path[len(prefix):] and path[len(prefix):] != "__init__.py"
+    }
     for path in files:
         if path.endswith(".py"):
             code = git("show", head + ":" + path).decode("utf-8-sig")
-            issues.extend(check_support_imports(role, path, code))
+            issues.extend(check_support_imports(role, path, code, local_modules))
             if path.rsplit("/", 1)[-1].startswith("test_"):
                 issues.append(path + ": use check_*.py for opt-in support checks")
     return issues
