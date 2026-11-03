@@ -62,6 +62,7 @@ class PackagerBaseline(unittest.TestCase):
         self.assertEqual(result['size'], archive.stat().st_size)
         with zipfile.ZipFile(archive) as zf:
             self.assertIsNone(zf.testzip())
+            self.assertEqual(result['file_count'], len(zf.namelist()))
             expected = {'demo/src/main.py', 'demo/src/__init__.py',
                         'demo/tests/__init__.py', 'demo/README.md',
                         'demo/pyproject.toml'}
@@ -96,6 +97,63 @@ class PackagerBaseline(unittest.TestCase):
         self.assertEqual(result['zip_path'], '')
         self.assertFalse(self.staging.exists())
         self.assertEqual(list((self.root / 'archive').iterdir()), [])
+
+    def assert_counted_members(self, result, expected):
+        self.assertTrue(result['success'], result['error'])
+        with zipfile.ZipFile(result['zip_path']) as zf:
+            self.assertIsNone(zf.testzip())
+            self.assertEqual(set(zf.namelist()), expected)
+            self.assertEqual(result['file_count'], len(zf.namelist()))
+            self.assertEqual(result['file_count'], len(expected))
+        self.assertFalse(self.staging.exists())
+
+    def python_members(self):
+        return {'demo/src/main.py', 'demo/src/__init__.py',
+                'demo/tests/__init__.py', 'demo/README.md',
+                'demo/pyproject.toml'}
+
+    def test_file_count_includes_generated_requirements(self):
+        with patch.object(packager.DependencyGenerator, 'detect_python_dependencies',
+                          return_value=['example-dependency']):
+            result = self.subject.pack(self.files, name='demo')
+        self.assert_counted_members(result, self.python_members() |
+                                    {'demo/requirements.txt'})
+        with zipfile.ZipFile(result['zip_path']) as zf:
+            self.assertEqual(zf.read('demo/requirements.txt').decode().strip(),
+                             'example-dependency')
+
+    def test_file_count_includes_extras_but_excludes_cleaned_files(self):
+        result = self.subject.pack(self.files, name='demo', extra_files=[
+            {'name': 'NOTICE.txt', 'content': 'included'},
+            {'name': 'coverage.json', 'content': '{}'},
+            {'name': 'cached.pyc', 'content': 'removed'}])
+        self.assert_counted_members(result, self.python_members() | {'demo/NOTICE.txt'})
+
+    def test_file_count_counts_overwritten_paths_once(self):
+        files = self.files + [{'name': 'main.py', 'content': 'VALUE = 2\n'}]
+        result = self.subject.pack(files, name='demo', extra_files=[
+            {'name': 'README.md', 'content': 'replacement readme'}])
+        self.assert_counted_members(result, self.python_members())
+        with zipfile.ZipFile(result['zip_path']) as zf:
+            self.assertEqual(zf.read('demo/src/main.py').decode().strip(), 'VALUE = 2')
+            self.assertEqual(zf.read('demo/README.md').decode(), 'replacement readme')
+
+    def test_node_file_count_includes_install_artifacts_without_network(self):
+        def simulate_install(project_dir):
+            (project_dir / 'package-lock.json').write_text('{}', encoding='utf-8')
+            dependency = project_dir / 'node_modules' / 'fixture'
+            dependency.mkdir(parents=True)
+            (dependency / 'index.js').write_text('module.exports = 1;', encoding='utf-8')
+            return True
+
+        with patch.object(self.subject, '_install_node_dependencies',
+                          side_effect=simulate_install) as install:
+            result = self.subject.pack([{'name': 'index.js', 'content': 'const x = 1;'}],
+                                       name='demo', project_type='javascript')
+        install.assert_called_once()
+        self.assert_counted_members(result, {
+            'demo/src/index.js', 'demo/README.md', 'demo/package.json',
+            'demo/package-lock.json', 'demo/node_modules/fixture/index.js'})
 
 
 class DependencyBaseline(unittest.TestCase):
