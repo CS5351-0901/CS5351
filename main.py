@@ -447,9 +447,11 @@ class CodeAgentPlugin(Star):
         return process_data
     
     def _save_snapshot(self, session_id: str, step: str, code: str, files: List[Dict]):
+        if not isinstance(step, str) or not re.fullmatch(r"[A-Za-z0-9_-]+", step):
+            raise ValueError("Invalid snapshot step")
         snapshot_dir = self.workspace / session_id / 'snapshots'
         snapshot_dir.mkdir(parents=True, exist_ok=True)
-        snapshot_file = snapshot_dir / f"{step}_{int(time.time())}.json"
+        snapshot_file = snapshot_dir / f"{step}_{time.time_ns()}.json"
         snapshot_data = {
             'step': step,
             'timestamp': time.time(),
@@ -461,6 +463,8 @@ class CodeAgentPlugin(Star):
         return str(snapshot_file)
     
     def _rollback_to_snapshot(self, session_id: str, step: str) -> Optional[Dict[str, Any]]:
+        if not isinstance(step, str) or not re.fullmatch(r"[A-Za-z0-9_-]+", step):
+            return None
         snapshot_dir = self.workspace / session_id / 'snapshots'
         if not snapshot_dir.exists():
             return None
