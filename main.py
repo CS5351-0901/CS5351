@@ -41,15 +41,11 @@ class CodeAgentPlugin(Star):
         return self.config.get(key, default)
     
     def _extract_requirement(self, text: str) -> Optional[str]:
-        patterns = [
-            r'/agent\s+(.+)',
-            r'@.*?/agent\s+(.+)'
-        ]
-        for pattern in patterns:
-            match = re.search(pattern, text, re.IGNORECASE)
-            if match:
-                return match.group(1).strip()
-        return None
+        # Require a command token boundary; direct @mention/agent forms are
+        # accepted, but path and email fragments must not start a request.
+        pattern = r'(?<!\S)(?:/agent|@[^\s/]+/agent)\s+(\S[\s\S]*)'
+        match = re.search(pattern, text, re.IGNORECASE)
+        return match.group(1).strip() if match else None
     
     def _is_exit_command(self, text: str) -> bool:
         return bool(re.search(r'/exitconver', text, re.IGNORECASE))
@@ -212,6 +208,9 @@ class CodeAgentPlugin(Star):
                 self.logger.warning(f"JS 依赖安装异常: {e}")
     
     def _call_sandbox(self, code: str, session_id: str, language: str = 'python', filename: str = 'main.py') -> Dict[str, Any]:
+        import sys
+        import tempfile
+
         sandbox_script = self.scripts_dir / "codeagent_sandbox.py"
         if not sandbox_script.exists():
             return {'success': False, 'error': 'Sandbox script not found'}
@@ -220,21 +219,31 @@ class CodeAgentPlugin(Star):
         memory_limit = self._get_config("memory_limit", 512)
         max_file_size = self._get_config("max_file_size", 10)
         
-        config_json = json.dumps({
-            "wall_time_limit": timeout,
-            "memory_limit_mb": memory_limit,
-            "file_size_limit_mb": max_file_size
-        })
-        
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                encoding="utf-8",
+                suffix=".json",
+                delete=False
+            ) as config_file:
+                json.dump({
+                    "wall_time_limit": timeout,
+                    "memory_limit_mb": memory_limit,
+                    "file_size_limit_mb": max_file_size
+                }, config_file)
+                config_path = Path(config_file.name)
+        except OSError as e:
+            return {'success': False, 'error': f'Sandbox config error: {e}'}
+
         try:
             proc = subprocess.run(
                 [
-                    'python3', str(sandbox_script),
-                    '--code', json.dumps(code),
+                    sys.executable, str(sandbox_script),
+                    '--code', code,
                     '--session-id', session_id,
                     '--language', language,
                     '--filename', filename,
-                    '--config', config_json
+                    '--config', str(config_path)
                 ],
                 capture_output=True,
                 text=True,
@@ -247,6 +256,11 @@ class CodeAgentPlugin(Star):
             return {'success': False, 'error': 'Sandbox timeout'}
         except Exception as e:
             return {'success': False, 'error': str(e)}
+        finally:
+            try:
+                config_path.unlink(missing_ok=True)
+            except OSError:
+                pass
     
     def _call_security_scan(self, code: str, language: str = 'python') -> Dict[str, Any]:
         security_script = self.scripts_dir / "codeagent_security.py"
@@ -272,19 +286,19 @@ class CodeAgentPlugin(Star):
         """调用 JavaScript/TypeScript 检查器"""
         checker_script = self.scripts_dir / "codeagent_js_checker.js"
         if not checker_script.exists():
-            return {'passed': True, 'error': 'JS Checker script not found'}
+            return {'passed': False, 'error': 'JS Checker script not found'}
         
         # 检查 Node.js 是否可用
         try:
             subprocess.run(['node', '-v'], capture_output=True, check=True)
-        except:
-            return {'passed': True, 'error': 'Node.js 不可用'}
+        except Exception:
+            return {'passed': False, 'error': 'Node.js 不可用'}
         
         try:
             proc = subprocess.run(
                 [
                     'node', str(checker_script),
-                    '--code', json.dumps(code),
+                    '--code', code,
                     '--language', language
                 ],
                 capture_output=True,
@@ -298,9 +312,9 @@ class CodeAgentPlugin(Star):
                     return {'passed': False, 'error': proc.stderr or 'JS Checker failed'}
             return json.loads(proc.stdout)
         except subprocess.TimeoutExpired:
-            return {'passed': True, 'error': 'JS Checker timeout'}
+            return {'passed': False, 'error': 'JS Checker timeout'}
         except Exception as e:
-            return {'passed': True, 'error': str(e)}
+            return {'passed': False, 'error': str(e)}
     
     def _call_packager(
         self, 
@@ -362,7 +376,7 @@ class CodeAgentPlugin(Star):
         error_type = error_info.get('error_type', '')
         error_message = error_info.get('error_message', '')
         
-        if 'Import' in error_type:
+        if 'Import' in error_type or error_type == 'ModuleNotFoundError':
             missing = re.search(r"No module named '([^']+)'", error_message)
             if missing:
                 return f"在 requirements.txt 中添加 {missing.group(1)}"
@@ -399,6 +413,7 @@ class CodeAgentPlugin(Star):
         return f"检查运行时错误: {error_type}"
     
     def _assess_project(self, requirement: str) -> Dict[str, str]:
+        requirement = requirement.strip()
         project_type = 'python'
         if '网页' in requirement or '网站' in requirement:
             project_type = 'web'
@@ -447,9 +462,11 @@ class CodeAgentPlugin(Star):
         return process_data
     
     def _save_snapshot(self, session_id: str, step: str, code: str, files: List[Dict]):
+        if not isinstance(step, str) or not re.fullmatch(r"[A-Za-z0-9_-]+", step):
+            raise ValueError("Invalid snapshot step")
         snapshot_dir = self.workspace / session_id / 'snapshots'
         snapshot_dir.mkdir(parents=True, exist_ok=True)
-        snapshot_file = snapshot_dir / f"{step}_{int(time.time())}.json"
+        snapshot_file = snapshot_dir / f"{step}_{time.time_ns()}.json"
         snapshot_data = {
             'step': step,
             'timestamp': time.time(),
@@ -461,6 +478,8 @@ class CodeAgentPlugin(Star):
         return str(snapshot_file)
     
     def _rollback_to_snapshot(self, session_id: str, step: str) -> Optional[Dict[str, Any]]:
+        if not isinstance(step, str) or not re.fullmatch(r"[A-Za-z0-9_-]+", step):
+            return None
         snapshot_dir = self.workspace / session_id / 'snapshots'
         if not snapshot_dir.exists():
             return None
@@ -510,12 +529,13 @@ class CodeAgentPlugin(Star):
             yield event.plain_result("当前已有 Agent 任务在执行，请等待完成或使用 /exitconver 退出。")
             return
         
-        self.active_sessions[session_id] = {
+        session = {
             'active': True,
             'requirement': requirement,
             'step': 0,
             'start_time': time.time()
         }
+        self.active_sessions[session_id] = session
         
         try:
             yield event.plain_result("正在分析需求...")
@@ -571,7 +591,6 @@ if __name__ == "__main__":
                     
                     if debug_round >= max_debug - 1:
                         yield event.plain_result(f"Debug 循环 #{debug_round + 1}/{max_debug} 失败\n错误: {error_info.get('error_message', '')[:200]}")
-                        self.active_sessions.pop(session_id, None)
                         return
                     
                     yield event.plain_result(f"Debug 循环 #{debug_round + 1}/{max_debug}\n错误类型: {error_info.get('error_type', 'Unknown')}\n修复方案: {fix}")
@@ -582,7 +601,6 @@ if __name__ == "__main__":
                 break
             else:
                 yield event.plain_result("Debug 循环结束但未成功。")
-                self.active_sessions.pop(session_id, None)
                 return
             
             # 安全检查
@@ -599,7 +617,6 @@ if __name__ == "__main__":
                     
                     if critical or high:
                         yield event.plain_result(f"安全检查未通过: {len(critical)} 个严重, {len(high)} 个高危问题")
-                        self.active_sessions.pop(session_id, None)
                         return
                     
                     quality_score = check_result.get('quality_score', 0)
@@ -615,7 +632,6 @@ if __name__ == "__main__":
                 
                 if security_report.get('risk_level') in ['critical', 'high']:
                     yield event.plain_result(f"安全拦截: {security_report.get('summary', 'Unknown')}")
-                    self.active_sessions.pop(session_id, None)
                     return
                 
                 quality_score = security_report.get('quality_score', 0)
@@ -676,12 +692,14 @@ def test_main():
             else:
                 yield event.plain_result(f"打包失败: {pack_result.get('error', 'Unknown')}\n\n代码:\n```\n{code}\n```")
             
-            self.active_sessions.pop(session_id, None)
             
         except Exception as e:
             self.logger.error(f"CodeAgent error: {e}")
             yield event.plain_result(f"执行出错: {e}")
-            self.active_sessions.pop(session_id, None)
+        finally:
+            # Release only this invocation; a newer session may reuse the key.
+            if self.active_sessions.get(session_id) is session:
+                self.active_sessions.pop(session_id, None)
 
     async def terminate(self):
         for session_id in list(self.active_sessions.keys()):
@@ -691,5 +709,6 @@ def test_main():
         self.logger.info("CodeAgent 插件已卸载")
 
 
-def get_star(context: Context):
-    return CodeAgentPlugin(context)
+def get_star(context: Context, config: AstrBotConfig):
+    """Create the plugin with the caller-provided context and configuration."""
+    return CodeAgentPlugin(context=context, config=config)

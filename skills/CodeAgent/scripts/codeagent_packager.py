@@ -476,6 +476,7 @@ class ProjectPackager:
                     tests_dir.mkdir(parents=True, exist_ok=True)
                     for file in project.test_files:
                         file_path = tests_dir / file.name
+                        file_path.parent.mkdir(parents=True, exist_ok=True)
                         file_path.write_text(file.content, encoding='utf-8')
                 
                 readme_content = ReadmeGenerator.generate(project)
@@ -490,6 +491,7 @@ class ProjectPackager:
                         (project_dir / "requirements.txt").write_text(req_content, encoding='utf-8')
                     
                     (project_dir / "src" / "__init__.py").write_text("", encoding='utf-8')
+                    (project_dir / "tests").mkdir(parents=True, exist_ok=True)
                     (project_dir / "tests" / "__init__.py").write_text("", encoding='utf-8')
                     
                 elif project.language in ['javascript', 'typescript']:
@@ -515,12 +517,13 @@ class ProjectPackager:
                             file_path = Path(root) / file
                             arcname = file_path.relative_to(temp_dir)
                             zf.write(file_path, arcname)
+                    file_count = len(zf.infolist())
                 
                 size = zip_path.stat().st_size
                 
                 result['success'] = True
                 result['zip_path'] = str(zip_path)
-                result['file_count'] = len(project.files) + len(project.test_files) + 2
+                result['file_count'] = file_count
                 result['size'] = size
                 
             finally:

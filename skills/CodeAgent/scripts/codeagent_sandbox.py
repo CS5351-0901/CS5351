@@ -8,7 +8,6 @@ CodeAgent 沙箱执行环境
 import os
 import sys
 import json
-import resource
 import signal
 import subprocess
 import time
@@ -17,6 +16,11 @@ import re
 from pathlib import Path
 from typing import Dict, Any, Optional, Tuple, List
 from dataclasses import dataclass, field
+
+try:
+    import resource
+except ImportError:
+    resource = None
 
 try:
     from RestrictedPython import safe_builtins
@@ -39,7 +43,7 @@ class SandboxConfig:
         'pypi.org', 'files.pythonhosted.org', 'cdn.jsdelivr.net',
         'github.com', 'raw.githubusercontent.com', 'registry.npmjs.org', 'unpkg.com'
     ])
-    workspace_root: str = "./codeagent_workspace"
+    workspace_root: Path = Path("./codeagent_workspace")
     allow_write: bool = True
     allow_read: bool = True
     allow_delete: bool = False
@@ -55,6 +59,9 @@ class ResourceLimiter:
         self.config = config
     
     def apply_limits(self):
+        if resource is None:
+            return
+
         try:
             resource.setrlimit(resource.RLIMIT_CPU, (self.config.cpu_time_limit, self.config.cpu_time_limit + 1))
             mem = self.config.memory_limit_mb * 1024 * 1024
@@ -76,6 +83,9 @@ class TimeoutManager:
         self._old_handler = None
     
     def __enter__(self):
+        if not hasattr(signal, "SIGALRM"):
+            return self
+
         def _handler(signum, frame):
             self._timed_out = True
             raise TimeoutError(f"执行超时（{self.timeout}秒）")
@@ -84,6 +94,9 @@ class TimeoutManager:
         return self
     
     def __exit__(self, exc_type, exc_val, exc_tb):
+        if not hasattr(signal, "SIGALRM"):
+            return False
+
         signal.alarm(0)
         if self._old_handler:
             signal.signal(signal.SIGALRM, self._old_handler)
@@ -228,7 +241,7 @@ class StandardExecutor:
         file_path = session_dir / filename
         
         if language == 'python':
-            cmd = ['python3', '-u', str(file_path)] + (args or [])
+            cmd = [sys.executable, '-u', str(file_path)] + (args or [])
         elif language == 'javascript':
             cmd = ['node', str(file_path)] + (args or [])
         elif language == 'bash':
@@ -271,7 +284,9 @@ class StandardExecutor:
     
     def _build_env(self) -> Dict[str, str]:
         env = os.environ.copy()
-        env['TMPDIR'] = str(self.config.workspace_root / 'tmp')
+        tmp_dir = self.config.workspace_root / 'tmp'
+        tmp_dir.mkdir(parents=True, exist_ok=True)
+        env['TMPDIR'] = str(tmp_dir)
         env['TEMP'] = env['TMPDIR']
         env['TMP'] = env['TMPDIR']
         env['PYTHONDONTWRITEBYTECODE'] = '1'
@@ -281,7 +296,8 @@ class StandardExecutor:
             env['http_proxy'] = ''
             env['https_proxy'] = ''
             env['no_proxy'] = '*'
-        env['PATH'] = '/usr/local/bin:/usr/bin:/bin'
+        if os.name != 'nt':
+            env['PATH'] = '/usr/local/bin:/usr/bin:/bin'
         return env
 
 
@@ -289,6 +305,7 @@ class SandboxExecutor:
     
     def __init__(self, config: SandboxConfig = None):
         self.config = config or SandboxConfig()
+        self.config.workspace_root = Path(self.config.workspace_root).resolve()
         self.workspace = Path(self.config.workspace_root).resolve()
         self.workspace.mkdir(parents=True, exist_ok=True)
         
@@ -328,7 +345,12 @@ class SandboxExecutor:
         
         try:
             with TimeoutManager(self.config.wall_time_limit):
-                if language == 'python' and self.config.use_restricted_python and RESTRICTED_PYTHON_AVAILABLE:
+                if (
+                    language == 'python'
+                    and self.config.use_restricted_python
+                    and RESTRICTED_PYTHON_AVAILABLE
+                    and hasattr(signal, "SIGALRM")
+                ):
                     stdout, stderr, exit_code = self.restricted_executor.execute_code(code, session_dir, filename)
                     result['execution_method'] = 'restricted_python'
                 else:
