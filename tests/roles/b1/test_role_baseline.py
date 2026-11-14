@@ -128,6 +128,28 @@ class B1BaselineTests(unittest.TestCase):
             with self.subTest(length=length):
                 self.assertEqual(plugin._assess_project("x" * length)["size"], expected)
 
+    def test_project_aliases_do_not_match_inside_identifiers(self):
+        plugin = self.make_plugin()
+        for requirement in ("Write unit tests", "Plan capital costs", "Build TStools",
+                            "Describe bashful behavior", "Rename internal_api"):
+            with self.subTest(requirement=requirement):
+                self.assertEqual(plugin._assess_project(requirement)["type"], "python")
+
+    def test_project_aliases_accept_punctuation_and_chinese_adjacency(self):
+        plugin = self.make_plugin()
+        for requirement, expected in (("Write Node.js utilities", "js"),
+                                      ("Build a TS-node parser", "ts"),
+                                      ("实现JavaScript解析器", "js"),
+                                      ("Build REST APIs", "api"),
+                                      ("Use Bash!", "shell")):
+            with self.subTest(requirement=requirement):
+                self.assertEqual(plugin._assess_project(requirement)["type"], expected)
+
+    def test_project_aliases_preserve_classification_precedence(self):
+        plugin = self.make_plugin()
+        self.assertEqual(plugin._assess_project("网页 JS API")["type"], "web")
+        self.assertEqual(plugin._assess_project("TS, JS, and API")["type"], "api")
+
     def test_project_assessment_ignores_outer_whitespace(self):
         plugin = self.make_plugin()
         self.assertEqual(plugin._assess_project("\n  " + "x" * 29 + "\t\n"),
