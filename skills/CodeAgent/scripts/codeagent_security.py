@@ -636,6 +636,7 @@ class CodeSecurityScanner:
     
     def scan_python(self, code: str, file_path: str = "") -> SecurityReport:
         report = SecurityReport(file_path=file_path)
+        syntax_valid = self._check_python_syntax(code, report)
         
         # 安全检查
         self._check_dangerous_patterns(code, report)
@@ -730,7 +731,7 @@ class CodeSecurityScanner:
         
         # 代码质量评估
         quality_score, quality_details = self._assess_quality(code)
-        report.quality_score = quality_score
+        report.quality_score = quality_score if syntax_valid else 0
         report.quality_details.update(quality_details)
         
         # 生成测试代码并运行
@@ -745,6 +746,25 @@ class CodeSecurityScanner:
         self._generate_summary(report)
         
         return report
+
+    def _check_python_syntax(self, code: str, report: SecurityReport) -> bool:
+        """Validate Python syntax without relying on optional external tools."""
+        try:
+            ast.parse(code)
+        except SyntaxError as error:
+            report.add_quality_issue(QualityIssue(
+                category="syntax",
+                message=error.msg,
+                line=error.lineno or 0,
+                code_snippet=(error.text or "").strip(),
+                suggestion="修复 Python 语法后重新运行检查",
+                tool="ast",
+            ))
+            report.quality_details["syntax_valid"] = False
+            return False
+
+        report.quality_details["syntax_valid"] = True
+        return True
     
     def scan_shell(self, code: str, file_path: str = "") -> SecurityReport:
         """扫描 Shell 代码"""
