@@ -466,7 +466,7 @@ class CodeAgentPlugin(Star):
             raise ValueError("Invalid snapshot step")
         snapshot_dir = self.workspace / session_id / 'snapshots'
         snapshot_dir.mkdir(parents=True, exist_ok=True)
-        snapshot_file = snapshot_dir / f"{step}_{time.time_ns()}.json"
+        snapshot_file = snapshot_dir / f"{step}_{time.time_ns()}_{os.urandom(16).hex()}.json"
         snapshot_data = {
             'step': step,
             'timestamp': time.time(),
