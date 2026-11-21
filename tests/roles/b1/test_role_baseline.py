@@ -150,6 +150,18 @@ class B1BaselineTests(unittest.TestCase):
         self.assertEqual(plugin._assess_project("网页 JS API")["type"], "web")
         self.assertEqual(plugin._assess_project("TS, JS, and API")["type"], "api")
 
+    def test_empty_assessment_falls_back_to_small_python_project(self):
+        plugin = self.make_plugin()
+        for requirement in ("", " \u2003\t\r\n"):
+            with self.subTest(requirement=requirement):
+                self.assertEqual(plugin._assess_project(requirement),
+                                 {"type": "python", "size": "S"})
+
+    def test_aliases_adjacent_to_digits_are_not_language_tokens(self):
+        plugin = self.make_plugin()
+        self.assertEqual(plugin._assess_project("Migrate api2 and ts5")["type"], "python")
+        self.assertEqual(plugin._assess_project("Build with TypeScript 5")["type"], "ts")
+
     def test_project_assessment_ignores_outer_whitespace(self):
         plugin = self.make_plugin()
         self.assertEqual(plugin._assess_project("\n  " + "x" * 29 + "\t\n"),

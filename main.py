@@ -416,7 +416,7 @@ class CodeAgentPlugin(Star):
         requirement = requirement.strip()
         # Match whole ASCII identifiers while allowing punctuation and Chinese
         # text next to language names (for example, 实现JavaScript解析器).
-        tokens = set(re.findall(r'[a-zA-Z0-9_]+', requirement.lower()))
+        tokens = set(re.findall(r'[a-z0-9_]+', requirement.lower()))
         project_type = 'python'
         if '网页' in requirement or '网站' in requirement:
             project_type = 'web'
@@ -426,19 +426,19 @@ class CodeAgentPlugin(Star):
             project_type = 'module'
         elif '工具' in requirement:
             project_type = 'toolkit'
-        elif tokens.intersection({'api', 'apis'}) or '接口' in requirement:
+        elif not tokens.isdisjoint(('api', 'apis')) or '接口' in requirement:
             project_type = 'api'
-        elif tokens.intersection({'js', 'javascript'}):
+        elif not tokens.isdisjoint(('js', 'javascript')):
             project_type = 'js'
-        elif tokens.intersection({'ts', 'typescript'}):
+        elif not tokens.isdisjoint(('ts', 'typescript')):
             project_type = 'ts'
-        elif tokens.intersection({'shell', 'bash'}):
+        elif not tokens.isdisjoint(('shell', 'bash')):
             project_type = 'shell'
         
-        word_count = len(requirement)
-        if word_count < 30:
+        character_count = len(requirement)
+        if character_count < 30:
             size = 'S'
-        elif word_count < 100:
+        elif character_count < 100:
             size = 'M'
         else:
             size = 'L'
