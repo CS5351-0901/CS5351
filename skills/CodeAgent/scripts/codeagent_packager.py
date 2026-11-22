@@ -430,6 +430,7 @@ class ProjectPackager:
             'error': None
         }
         
+        zip_path = None
         try:
             project_files = []
             for item in files:
@@ -534,6 +535,11 @@ class ProjectPackager:
                 
         except Exception as e:
             result['error'] = str(e)
+            if zip_path is not None:
+                try:
+                    zip_path.unlink(missing_ok=True)
+                except OSError as cleanup_error:
+                    result["error"] += f"; archive cleanup failed: {cleanup_error}"
         
         return result
 
