@@ -8,7 +8,6 @@ discovery does not collect it. Run via:
     python -m unittest discover -s course_tools/b2_support/checks -p "check_*.py"
 """
 
-import os
 import sys
 import unittest
 from pathlib import Path

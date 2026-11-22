@@ -3,7 +3,6 @@
 """Self-checks for the corpus diff."""
 
 import json
-import os
 import sys
 import unittest
 from pathlib import Path

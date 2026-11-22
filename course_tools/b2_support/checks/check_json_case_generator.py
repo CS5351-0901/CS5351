@@ -3,7 +3,6 @@
 """Self-checks for the JSON case generator."""
 
 import json
-import os
 import sys
 import unittest
 from pathlib import Path
