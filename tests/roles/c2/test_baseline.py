@@ -42,14 +42,8 @@ class PackagerBaseline(unittest.TestCase):
         self.root = Path(self.temp.name)
         self.staging = self.root / 'staging'
 
-        def isolated_path(value):
-            # Redirect only the existing fixed temporary path; real filesystem
-            # and ZIP operations still run within the test-owned directory.
-            if str(value).startswith('/tmp/codeagent_pack_'):
-                return self.staging
-            return Path(value)
-
-        redirect = patch.object(packager, 'Path', side_effect=isolated_path)
+        self.staging.mkdir()
+        redirect = patch.object(tempfile, 'tempdir', str(self.staging))
         redirect.start()
         self.addCleanup(redirect.stop)
         self.subject = packager.ProjectPackager(str(self.root / 'archive'))
@@ -72,7 +66,7 @@ class PackagerBaseline(unittest.TestCase):
             self.assertEqual(zf.read('demo/src/main.py').decode().replace('\r\n', '\n'),
                              self.files[0]['content'])
             self.assertIn('[project]', zf.read('demo/pyproject.toml').decode())
-        self.assertFalse(self.staging.exists())
+        self.assertEqual(list(self.staging.iterdir()), [])
 
     def test_python_zip_preserves_source_and_test(self):
         test_code = 'from src.main import main\nassert main() == 42\n'
@@ -95,7 +89,7 @@ class PackagerBaseline(unittest.TestCase):
         self.assertFalse(result['success'])
         self.assertEqual(result['error'], 'simulated disk failure')
         self.assertEqual(result['zip_path'], '')
-        self.assertFalse(self.staging.exists())
+        self.assertEqual(list(self.staging.iterdir()), [])
         self.assertEqual(list((self.root / 'archive').iterdir()), [])
 
     def assert_counted_members(self, result, expected):
@@ -105,7 +99,7 @@ class PackagerBaseline(unittest.TestCase):
             self.assertEqual(set(zf.namelist()), expected)
             self.assertEqual(result['file_count'], len(zf.namelist()))
             self.assertEqual(result['file_count'], len(expected))
-        self.assertFalse(self.staging.exists())
+        self.assertEqual(list(self.staging.iterdir()), [])
 
     def python_members(self):
         return {'demo/src/main.py', 'demo/src/__init__.py',

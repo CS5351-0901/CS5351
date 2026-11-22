@@ -9,6 +9,7 @@ import os
 import sys
 import json
 import zipfile
+import tempfile
 import shutil
 import ast
 import subprocess
@@ -456,8 +457,7 @@ class ProjectPackager:
                 project_type
             )
             
-            temp_dir = Path(f"/tmp/codeagent_pack_{datetime.now().strftime('%Y%m%d_%H%M%S')}")
-            temp_dir.mkdir(parents=True, exist_ok=True)
+            temp_dir = Path(tempfile.mkdtemp(prefix="codeagent_pack_"))
             
             try:
                 project_dir = temp_dir / project.name
@@ -508,8 +508,11 @@ class ProjectPackager:
                 
                 self._cleanup_temp_files(project_dir)
                 
-                zip_name = f"{project.name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip"
-                zip_path = self.output_dir / zip_name
+                zip_prefix = f"{project.name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}_"
+                with tempfile.NamedTemporaryFile(
+                    prefix=zip_prefix, suffix=".zip", dir=self.output_dir, delete=False
+                ) as archive_file:
+                    zip_path = Path(archive_file.name)
                 
                 with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
                     for root, _, zip_files in os.walk(project_dir):
