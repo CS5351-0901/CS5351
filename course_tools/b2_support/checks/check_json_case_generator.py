@@ -44,5 +44,30 @@ class CheckJsonCaseGeneratorTest(unittest.TestCase):
         )
 
 
+class CheckInvalidDepthTest(unittest.TestCase):
+    """Depth semantics and invalid-depth rejection for nested JSON generation."""
+
+    def test_nested_json_depth_zero(self):
+        value = json_case_generator.generate_nested_json(seed=1, depth=0)
+        self.assertEqual(value, {"leaf": True})
+
+    def test_nested_json_depth_grows(self):
+        shallow = json_case_generator.generate_nested_json(seed=1, depth=1)
+        deep = json_case_generator.generate_nested_json(seed=1, depth=3)
+        self.assertIn("child", shallow)
+        self.assertEqual(deep["child"]["child"]["child"], {"leaf": True})
+
+    def test_invalid_depth_raises(self):
+        for bad in (-1, 3.5, "2", None, True):
+            with self.assertRaises(ValueError):
+                json_case_generator.generate_nested_json(seed=1, depth=bad)
+
+    def test_nested_json_is_deterministic(self):
+        self.assertEqual(
+            json_case_generator.generate_nested_json(seed=9, depth=2),
+            json_case_generator.generate_nested_json(seed=9, depth=2),
+        )
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

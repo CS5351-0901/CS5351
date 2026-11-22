@@ -55,5 +55,25 @@ class CheckCaseModelsTest(unittest.TestCase):
             self.assertIn(c, cats)
 
 
+class CheckInvalidSeedTest(unittest.TestCase):
+    """Invalid seed values must still map deterministically without crashing."""
+
+    def test_invalid_seed_values_are_stable(self):
+        for bad in (["list", "seed"], {"a": 1}, -7, 3.5):
+            self.assertEqual(
+                deterministic.seed_to_int(bad), deterministic.seed_to_int(bad)
+            )
+
+    def test_rng_accepts_odd_seeds(self):
+        rng = deterministic.make_rng(["not", "an", "int"])
+        self.assertIsInstance(rng.random(), float)
+
+    def test_object_seed_is_stable_for_same_instance(self):
+        obj = object()
+        self.assertEqual(
+            deterministic.seed_to_int(obj), deterministic.seed_to_int(obj)
+        )
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

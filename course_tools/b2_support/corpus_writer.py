@@ -48,6 +48,11 @@ def write_corpus(
 
     Raises OutputExistsError if the path exists and overwrite is False.
     """
+    if output_path is None:
+        raise ValueError("output path is required")
+    if isinstance(output_path, str) and not output_path.strip():
+        raise ValueError("output path must be non-empty")
+
     p = Path(output_path)
     if p.exists() and not overwrite:
         raise OutputExistsError(

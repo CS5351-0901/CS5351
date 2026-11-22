@@ -10,8 +10,13 @@ SUPPORT_DIR = Path(__file__).resolve().parents[1]
 if str(SUPPORT_DIR) not in sys.path:
     sys.path.insert(0, str(SUPPORT_DIR))
 
-from result_aggregator import aggregate, filter_by_status, filter_by_category
-from result_models import ResultRecord
+from result_aggregator import (
+    aggregate,
+    duplicate_case_ids,
+    filter_by_category,
+    filter_by_status,
+)
+from result_models import ResultRecord, is_valid_status, require_valid_status
 
 
 def _sample() -> list:
@@ -51,6 +56,73 @@ class CheckResultAggregatorTest(unittest.TestCase):
     def test_unknown_status_not_in_aggregate(self):
         agg = aggregate(self.records)
         self.assertNotIn("bogus", agg)
+
+
+class CheckGenericResultValidationTest(unittest.TestCase):
+    """Malformed generic result payloads must be rejected explicitly."""
+
+    def test_from_dict_roundtrip(self):
+        rec = ResultRecord.from_dict(
+            {
+                "case_id": "c1",
+                "status": "pass",
+                "category": "unit",
+                "duration_ms": 1.5,
+                "message": "ok",
+                "metadata": {"k": 1},
+            }
+        )
+        self.assertEqual(rec.case_id, "c1")
+        self.assertEqual(rec.duration_ms, 1.5)
+        self.assertEqual(rec.metadata, {"k": 1})
+
+    def test_malformed_payload_raises(self):
+        with self.assertRaises(ValueError):
+            ResultRecord.from_dict("not a mapping")
+        with self.assertRaises(ValueError):
+            # missing required 'category'
+            ResultRecord.from_dict({"case_id": "c1", "status": "pass"})
+        with self.assertRaises(ValueError):
+            ResultRecord.from_dict(
+                {
+                    "case_id": "c1",
+                    "status": "pass",
+                    "category": "unit",
+                    "duration_ms": "slow",
+                }
+            )
+        with self.assertRaises(ValueError):
+            ResultRecord.from_dict(
+                {
+                    "case_id": "c1",
+                    "status": "pass",
+                    "category": "unit",
+                    "metadata": "nope",
+                }
+            )
+
+    def test_unknown_status_raises(self):
+        self.assertFalse(is_valid_status("weird"))
+        with self.assertRaises(ValueError):
+            require_valid_status("weird")
+        with self.assertRaises(ValueError):
+            ResultRecord.from_dict(
+                {"case_id": "c1", "status": "weird", "category": "unit"}
+            )
+
+
+class CheckDuplicateCaseIdTest(unittest.TestCase):
+    def test_duplicate_case_ids(self):
+        records = [
+            ResultRecord(case_id="a", status="pass", category="unit"),
+            ResultRecord(case_id="a", status="fail", category="unit"),
+            ResultRecord(case_id="b", status="pass", category="unit"),
+        ]
+        self.assertEqual(duplicate_case_ids(records), ["a"])
+
+    def test_no_duplicates(self):
+        records = [ResultRecord(case_id="a", status="pass", category="unit")]
+        self.assertEqual(duplicate_case_ids(records), [])
 
 
 if __name__ == "__main__":
