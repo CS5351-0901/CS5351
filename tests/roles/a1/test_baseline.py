@@ -3,6 +3,7 @@
 import importlib.util
 import json
 import sys
+import tempfile
 import types
 import unittest
 from pathlib import Path
@@ -196,14 +197,19 @@ class A1BaselineTests(unittest.TestCase):
 
     def test_dependency_setup_skips_npm_when_node_modules_exists(self):
         plugin = make_plugin()
-        plugin.scripts_dir = FixtureScriptDirectory(
-            {"codeagent_js_checker.js", "package.json", "node_modules"}
-        )
         found_node = SimpleNamespace(returncode=0, stdout="v20.18.0", stderr="")
-
-        with mock.patch.object(MAIN.subprocess, "run", return_value=found_node) as run:
-            plugin._ensure_js_dependencies()
-
+        with tempfile.TemporaryDirectory() as directory:
+            scripts = Path(directory)
+            (scripts / "codeagent_js_checker.js").touch()
+            (scripts / "package.json").write_text(
+                json.dumps({"devDependencies": {"eslint": "^8.57.0", "typescript": "^5.3.0"}}),
+                encoding="utf-8",
+            )
+            for dependency in ("eslint", "typescript"):
+                (scripts / "node_modules" / dependency).mkdir(parents=True, exist_ok=True)
+            plugin.scripts_dir = scripts
+            with mock.patch.object(MAIN.subprocess, "run", return_value=found_node) as run:
+                plugin._ensure_js_dependencies()
         run.assert_called_once_with(["node", "-v"], capture_output=True, check=True)
 
     def test_dependency_setup_reports_missing_npm_without_raising(self):
