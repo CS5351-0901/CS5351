@@ -122,6 +122,25 @@ class C1BaselineTests(unittest.TestCase):
             self.assertEqual(restored["code"], "new")
             self.assertEqual(restored["files"], [{"name": "new.py"}])
 
+    def test_same_nanosecond_snapshots_keep_unique_recovery_points(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            self.plugin.workspace = Path(temp_dir)
+            ids = [b"first-id", b"second-id"]
+            with mock.patch.object(MAIN.time, "time", return_value=1000):
+                with mock.patch.object(MAIN.time, "time_ns", return_value=1000000000000):
+                    with mock.patch.object(MAIN.os, "urandom", side_effect=ids):
+                        first = Path(self.plugin._save_snapshot(
+                            "session", "core_complete", "old", [{"name": "old.py"}]
+                        ))
+                        second = Path(self.plugin._save_snapshot(
+                            "session", "core_complete", "new", [{"name": "new.py"}]
+                        ))
+
+            self.assertNotEqual(first, second)
+            self.assertEqual(len(list(first.parent.glob("core_complete_*.json"))), 2)
+            self.assertEqual(json.loads(first.read_text(encoding="utf-8"))["code"], "old")
+            self.assertEqual(json.loads(second.read_text(encoding="utf-8"))["code"], "new")
+
     def test_rollback_ignores_newer_snapshots_from_other_steps_and_sessions(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             self.plugin.workspace = Path(temp_dir)
@@ -160,3 +179,4 @@ class C1BaselineTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
