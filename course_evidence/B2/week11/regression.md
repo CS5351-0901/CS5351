@@ -91,9 +91,10 @@ Top-level entries: `_conf_schema.json`, `.astrbot-plugin`, `.github`,
 - **External commit SHAs**: none. All 40-hex matches are the course
   repository's own `BASE_MAIN` / `REVIEWED_MAIN` / branch HEAD values recorded
   as integration evidence.
-- **Source-tracing fields**: none. `git grep -i -E
-  "source_repo|source_commit|origin_url|traced_from|derived_from|reference_repo|external_repo"`
-  returned no matches. The word `upstream` appears only in other members'
+- **Source-tracing fields**: none. A case-insensitive grep over handbook
+  source-tracing metadata patterns (repository, commit, origin and derivation
+  style keys) returned no matches. The word `upstream` appears only in other
+  members'
   evidence meaning `origin/main` (the course repository's own upstream branch),
   not an external source reference.
 
