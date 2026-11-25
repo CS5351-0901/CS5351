@@ -4,7 +4,7 @@
  * 路径：./scripts/codeagent_js_checker.js
  */
 
-import { execSync } from 'child_process';
+import { execFileSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
@@ -15,9 +15,11 @@ const __dirname = path.dirname(__filename);
 
 class JavaScriptChecker {
     constructor() {
-        this.tempDir = path.join(os.tmpdir(), 'codeagent_js_check');
-        this.eslintAvailable = this._checkCommand('eslint');
-        this.tscAvailable = this._checkCommand('tsc');
+        this.tempDir = null;
+        this.eslintCommand = this._findCommand('eslint');
+        this.tscCommand = this._findCommand('tsc');
+        this.eslintAvailable = Boolean(this.eslintCommand);
+        this.tscAvailable = Boolean(this.tscCommand);
         this.results = {
             issues: [],
             passed: true,
@@ -30,12 +32,21 @@ class JavaScriptChecker {
         };
     }
 
-    _checkCommand(cmd) {
+    _findCommand(cmd) {
+        const localName = process.platform === 'win32' ? `${cmd}.cmd` : cmd;
+        const localPath = path.join(__dirname, 'node_modules', '.bin', localName);
+        if (fs.existsSync(localPath)) {
+            return localPath;
+        }
+
         try {
-            execSync(`which ${cmd}`, { stdio: 'ignore' });
-            return true;
+            execFileSync(cmd, ['--version'], {
+                stdio: 'ignore',
+                shell: process.platform === 'win32'
+            });
+            return cmd;
         } catch {
-            return false;
+            return null;
         }
     }
 
@@ -62,9 +73,7 @@ class JavaScriptChecker {
     }
 
     _setupTempDir(code, language) {
-        if (!fs.existsSync(this.tempDir)) {
-            fs.mkdirSync(this.tempDir, { recursive: true });
-        }
+        this.tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'codeagent_js_check-'));
         
         const ext = this._getFileExtension(language);
         const filePath = path.join(this.tempDir, `main${ext}`);
@@ -105,9 +114,10 @@ class JavaScriptChecker {
     }
 
     _cleanup() {
-        if (fs.existsSync(this.tempDir)) {
+        if (this.tempDir && fs.existsSync(this.tempDir)) {
             fs.rmSync(this.tempDir, { recursive: true, force: true });
         }
+        this.tempDir = null;
     }
 
     _runESLint(filePath) {
@@ -119,9 +129,14 @@ class JavaScriptChecker {
         }
 
         try {
-            const output = execSync(
-                `eslint ${filePath} --format json --env es2020,node`,
-                { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }
+            const output = execFileSync(
+                this.eslintCommand,
+                [filePath, '--format', 'json', '--env', 'es2020,node'],
+                {
+                    encoding: 'utf-8',
+                    stdio: ['pipe', 'pipe', 'pipe'],
+                    shell: process.platform === 'win32'
+                }
             );
             
             if (output.trim()) {
@@ -201,9 +216,10 @@ class JavaScriptChecker {
         }
 
         try {
-            execSync(`tsc --noEmit --strict ${filePath}`, {
+            execFileSync(this.tscCommand, ['--noEmit', '--strict', filePath], {
                 encoding: 'utf-8',
-                stdio: ['pipe', 'pipe', 'pipe']
+                stdio: ['pipe', 'pipe', 'pipe'],
+                shell: process.platform === 'win32'
             });
         } catch (error) {
             const output = (error.stdout || '') + (error.stderr || '');
@@ -256,7 +272,7 @@ class JavaScriptChecker {
         const issues = [];
         const patterns = [
             { pattern: /eval\s*\(/g, level: 'critical', msg: '使用 eval 执行动态代码，存在代码注入风险' },
-            { pattern: /Function\s*\(/g, level: 'critical', msg: '使用 Function 构造函数，存在代码注入风险' },
+            { pattern: /\bFunction\s*\(/g, level: 'critical', msg: '使用 Function 构造函数，存在代码注入风险' },
             { pattern: /child_process\.exec/g, level: 'high', msg: '使用 child_process.exec 执行系统命令' },
             { pattern: /child_process\.spawn/g, level: 'high', msg: '使用 child_process.spawn 执行系统命令' },
             { pattern: /fs\.writeFile.*['"]\/.*['"]/g, level: 'high', msg: '写入系统目录文件，可能存在权限风险' },
@@ -588,4 +604,8 @@ console.log(result);
     }
 }
 
-main();
+if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
+    main();
+}
+
+export { JavaScriptChecker };
