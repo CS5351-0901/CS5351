@@ -33,3 +33,15 @@ def status_counts(records: List[ResultRecord]) -> Dict[str, int]:
     agg = aggregate(records)
     agg.pop("total", None)
     return agg
+
+
+def duplicate_case_ids(records: List[ResultRecord]) -> List[str]:
+    """Return the case ids that appear more than once, sorted."""
+    seen: set = set()
+    duplicated: set = set()
+    for rec in records:
+        if rec.case_id in seen:
+            duplicated.add(rec.case_id)
+        else:
+            seen.add(rec.case_id)
+    return sorted(duplicated)
