@@ -20,12 +20,8 @@ class TestLayoutContracts(unittest.TestCase):
         self.staging = self.root / 'staging'
         self.archive = self.root / 'archive'
 
-        def isolated_path(value):
-            if str(value).startswith('/tmp/codeagent_pack_'):
-                return self.staging
-            return Path(value)
-
-        redirect = patch.object(packager, 'Path', side_effect=isolated_path)
+        self.staging.mkdir()
+        redirect = patch.object(tempfile, 'tempdir', str(self.staging))
         redirect.start()
         self.addCleanup(redirect.stop)
         self.subject = packager.ProjectPackager(str(self.archive))
@@ -35,7 +31,7 @@ class TestLayoutContracts(unittest.TestCase):
         result = self.subject.pack(self.files, tests, name='layout')
         self.assertTrue(result['success'], result['error'])
         self.assertIsNone(result['error'])
-        self.assertFalse(self.staging.exists())
+        self.assertEqual(list(self.staging.iterdir()), [])
         archive = Path(result['zip_path'])
         self.assertEqual(result['size'], archive.stat().st_size)
         with zipfile.ZipFile(archive) as zf:
@@ -78,7 +74,7 @@ class TestLayoutContracts(unittest.TestCase):
         self.assertEqual(result['zip_path'], '')
         self.assertEqual(result['file_count'], 0)
         self.assertEqual(result['size'], 0)
-        self.assertFalse(self.staging.exists())
+        self.assertEqual(list(self.staging.iterdir()), [])
         self.assertEqual(list(self.archive.iterdir()), [])
 
     def test_existing_file_cannot_be_parent_directory(self):
