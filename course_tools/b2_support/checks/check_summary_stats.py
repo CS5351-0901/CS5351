@@ -2,7 +2,6 @@
 # -*- coding: utf-8 -*-
 """Self-checks for summary statistics."""
 
-import os
 import sys
 import unittest
 from pathlib import Path
