@@ -188,7 +188,17 @@ class CodeAgentPlugin(Star):
         if not package_json.exists():
             return
         
-        if not node_modules.exists():
+        modules_ready = node_modules.exists()
+        if modules_ready:
+            try:
+                manifest = json.loads(package_json.read_text(encoding="utf-8"))
+                required = list(manifest.get("dependencies", {})) + list(manifest.get("devDependencies", {}))
+                modules_ready = all((node_modules / name).is_dir() for name in required)
+            except (OSError, ValueError, TypeError, AttributeError) as error:
+                self.logger.warning(f"JS 依赖清单检查失败: {error}")
+                modules_ready = False
+
+        if not modules_ready:
             self.logger.info("正在安装 JS 检查器依赖 (npm install)...")
             try:
                 proc = subprocess.run(

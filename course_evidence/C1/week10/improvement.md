@@ -14,3 +14,4 @@ RESULT: PASS (11 tests)
 ```
 
 The C1 suite uses temporary snapshot files and AstrBot import stubs. It does not run the bot or claim end-to-end rollback integration.
+
