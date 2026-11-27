@@ -424,6 +424,9 @@ class CodeAgentPlugin(Star):
     
     def _assess_project(self, requirement: str) -> Dict[str, str]:
         requirement = requirement.strip()
+        # Match whole ASCII identifiers while allowing punctuation and Chinese
+        # text next to language names (for example, 实现JavaScript解析器).
+        tokens = set(re.findall(r'[a-z0-9_]+', requirement.lower()))
         project_type = 'python'
         if '网页' in requirement or '网站' in requirement:
             project_type = 'web'
@@ -433,19 +436,19 @@ class CodeAgentPlugin(Star):
             project_type = 'module'
         elif '工具' in requirement:
             project_type = 'toolkit'
-        elif 'api' in requirement.lower() or '接口' in requirement:
+        elif not tokens.isdisjoint(('api', 'apis')) or '接口' in requirement:
             project_type = 'api'
-        elif 'js' in requirement.lower() or 'javascript' in requirement.lower():
+        elif not tokens.isdisjoint(('js', 'javascript')):
             project_type = 'js'
-        elif 'ts' in requirement.lower() or 'typescript' in requirement.lower():
+        elif not tokens.isdisjoint(('ts', 'typescript')):
             project_type = 'ts'
-        elif 'shell' in requirement.lower() or 'bash' in requirement.lower():
+        elif not tokens.isdisjoint(('shell', 'bash')):
             project_type = 'shell'
         
-        word_count = len(requirement)
-        if word_count < 30:
+        character_count = len(requirement)
+        if character_count < 30:
             size = 'S'
-        elif word_count < 100:
+        elif character_count < 100:
             size = 'M'
         else:
             size = 'L'
@@ -476,7 +479,7 @@ class CodeAgentPlugin(Star):
             raise ValueError("Invalid snapshot step")
         snapshot_dir = self.workspace / session_id / 'snapshots'
         snapshot_dir.mkdir(parents=True, exist_ok=True)
-        snapshot_file = snapshot_dir / f"{step}_{time.time_ns()}.json"
+        snapshot_file = snapshot_dir / f"{step}_{time.time_ns()}_{os.urandom(16).hex()}.json"
         snapshot_data = {
             'step': step,
             'timestamp': time.time(),
