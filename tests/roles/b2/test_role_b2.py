@@ -400,5 +400,58 @@ class B2Week7ContractTest(unittest.TestCase):
         self.assertEqual(first["status"], second["status"])
 
 
+class B2Week10RobustnessTest(unittest.TestCase):
+    """Week 10 Sprint 3 improvement: robustness coverage for B2 responsibilities.
+
+    Targets behavior not exercised by earlier weeks: the exact exit-command
+    matching semantics, the precise character set sanitized in a session id,
+    cleanup of a directory that has no process.json, and process.json rewrite /
+    UTF-8 behavior on repeated calls.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.plugin = make_plugin(self.tmp)
+
+    def tearDown(self):
+        shutil.rmtree(self.plugin.workspace, ignore_errors=True)
+
+    def test_exit_command_requires_leading_slash(self):
+        # The pattern anchors on "/exitconver"; a bare word must not match.
+        self.assertFalse(self.plugin._is_exit_command("exitconversion"))
+        self.assertTrue(self.plugin._is_exit_command("/exitconversion"))
+
+    def test_exit_command_is_prefix_tolerant(self):
+        # Any text around the prefix is allowed; unrelated text is not.
+        self.assertTrue(self.plugin._is_exit_command("please /exitconversation now"))
+        self.assertFalse(self.plugin._is_exit_command("no command here"))
+
+    def test_sanitize_replaces_only_colon_and_slash(self):
+        # Only ':' and '/' are replaced; spaces, dots and CJK characters stay.
+        out = self.plugin._sanitize_session_id("g:1 /u:2", "with space and 中文")
+        self.assertNotIn(":", out)
+        self.assertNotIn("/", out)
+        self.assertIn(" ", out)
+        self.assertIn("中文", out)
+
+    def test_cleanup_dir_without_process_json(self):
+        # Cleanup removes the whole session dir even when no process.json exists.
+        session_dir = self.plugin.workspace / "solo_session"
+        session_dir.mkdir(parents=True, exist_ok=True)
+        (session_dir / "scratch.txt").write_text("x", encoding="utf-8")
+        self.plugin._cleanup_session("solo_session")
+        self.assertFalse(session_dir.exists())
+
+    def test_process_json_rewrite_is_utf8_and_overwrites(self):
+        # A second call on the same session rewrites the file (no append) and
+        # keeps non-ASCII text intact.
+        sid = self.plugin._sanitize_session_id("g", "u")
+        self.plugin._create_process_json(sid, "第一次", "python", "S")
+        self.plugin._create_process_json(sid, "第二次", "web", "M")
+        raw = (self.plugin.workspace / sid / "process.json").read_text(encoding="utf-8")
+        self.assertIn("第二次", raw)
+        self.assertNotIn("第一次", raw)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

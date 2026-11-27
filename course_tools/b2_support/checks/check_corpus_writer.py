@@ -24,6 +24,25 @@ class CheckCorpusWriterTest(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
+    def test_empty_output_path_raises(self):
+        for bad in ("", "   "):
+            with self.assertRaises(ValueError):
+                write_corpus(bad, [{"a": 1}], fmt="jsonl")
+
+    def test_overwrite_conflict_preserves_existing_content(self):
+        out = self.dir / "keep.jsonl"
+        write_corpus(out, [{"a": 1}], fmt="jsonl")
+        original = out.read_text(encoding="utf-8")
+        with self.assertRaises(OutputExistsError):
+            write_corpus(out, [{"z": 9}], fmt="jsonl")
+        self.assertEqual(out.read_text(encoding="utf-8"), original)
+
+    def test_empty_corpus_writes_zero_records(self):
+        out = self.dir / "empty.jsonl"
+        manifest = write_corpus(out, [], fmt="jsonl")
+        self.assertEqual(manifest["record_count"], 0)
+        self.assertEqual(out.read_text(encoding="utf-8"), "")
+
     def test_jsonl_write(self):
         recs = [{"a": 1}, {"b": "x"}]
         out = self.dir / "c.jsonl"

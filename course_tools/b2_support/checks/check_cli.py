@@ -3,7 +3,6 @@
 """Self-checks for the CLI (exercised via subprocess with real temp files)."""
 
 import json
-import os
 import subprocess
 import sys
 import tempfile

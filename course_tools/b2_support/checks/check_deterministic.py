@@ -8,7 +8,6 @@ discovery does not collect it. Run via:
     python -m unittest discover -s course_tools/b2_support/checks -p "check_*.py"
 """
 
-import os
 import sys
 import unittest
 from pathlib import Path
@@ -54,6 +53,26 @@ class CheckCaseModelsTest(unittest.TestCase):
         cats = set(required_string_categories())
         for c in ("empty", "whitespace", "unicode", "emoji", "long_text", "newline", "tab"):
             self.assertIn(c, cats)
+
+
+class CheckInvalidSeedTest(unittest.TestCase):
+    """Invalid seed values must still map deterministically without crashing."""
+
+    def test_invalid_seed_values_are_stable(self):
+        for bad in (["list", "seed"], {"a": 1}, -7, 3.5):
+            self.assertEqual(
+                deterministic.seed_to_int(bad), deterministic.seed_to_int(bad)
+            )
+
+    def test_rng_accepts_odd_seeds(self):
+        rng = deterministic.make_rng(["not", "an", "int"])
+        self.assertIsInstance(rng.random(), float)
+
+    def test_object_seed_is_stable_for_same_instance(self):
+        obj = object()
+        self.assertEqual(
+            deterministic.seed_to_int(obj), deterministic.seed_to_int(obj)
+        )
 
 
 if __name__ == "__main__":
