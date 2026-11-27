@@ -345,6 +345,33 @@ class A2OrchestrationTests(unittest.IsolatedAsyncioTestCase):
         self.plugin._call_packager.assert_not_called()
         self.assertEqual(self.plugin.active_sessions, {})
 
+    async def test_process_state_failure_stops_execution(self):
+        self.plugin._create_process_json.side_effect = OSError("state write failed")
+        replies = await self.run_command()
+        self.assertIn("state write failed", replies[-1])
+        self.plugin._call_sandbox.assert_not_called()
+        self.plugin._call_packager.assert_not_called()
+        self.assertEqual(self.plugin.active_sessions, {})
+
+    async def test_packager_exception_releases_session(self):
+        self.plugin._call_packager.side_effect = RuntimeError("packager unavailable")
+        replies = await self.run_command()
+        self.assertIn("packager unavailable", replies[-1])
+        self.plugin._save_snapshot.assert_called_once()
+        self.assertEqual(self.plugin.active_sessions, {})
+
+    async def test_cancellation_injected_at_reply_is_not_swallowed(self):
+        command = self.plugin.agent_command(Event())
+        await anext(command)
+        try:
+            with self.assertRaises(asyncio.CancelledError):
+                await command.athrow(asyncio.CancelledError())
+        finally:
+            await command.aclose()
+        self.assertEqual(self.plugin.active_sessions, {})
+        self.plugin.logger.error.assert_not_called()
+        self.assert_no_pipeline()
+
     async def test_last_allowed_retry_success_continues_once(self):
         self.plugin._call_sandbox.side_effect = [
             {"success": False, "error": "fixture retry"},

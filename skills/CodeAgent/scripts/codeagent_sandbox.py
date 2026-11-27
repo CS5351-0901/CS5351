@@ -381,6 +381,8 @@ class SandboxExecutor:
             result['files'] = []
             total_size = 0
             for item in session_dir.iterdir():
+                if len(result['files']) >= self.config.max_files:
+                    break
                 if item.is_file() and item.name != filename and not item.name.startswith('.'):
                     size = item.stat().st_size
                     if size > self.config.file_size_limit_mb * 1024 * 1024:
@@ -391,8 +393,6 @@ class SandboxExecutor:
                         'size': size,
                         'path': str(item.relative_to(self.workspace))
                     })
-                    if len(result['files']) > self.config.max_files:
-                        break
             if total_size > self.config.total_size_limit_mb * 1024 * 1024:
                 result['warning'] = f"项目总大小超出限制 ({total_size} bytes)"
         except Exception as e:

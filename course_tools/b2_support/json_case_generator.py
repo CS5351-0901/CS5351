@@ -46,3 +46,21 @@ def generate_malformed_json_texts(seed: Optional[int] = None) -> List[Tuple[str,
 def generate_json_case_payloads(seed: Optional[int] = None) -> List[Tuple[str, object]]:
     """Alias for generate_json_values; serializable python objects."""
     return generate_json_values(seed)
+
+
+def generate_nested_json(seed: Optional[int] = None, depth: int = 2) -> object:
+    """Return a nested JSON value whose nesting depth is exactly `depth`.
+
+    `depth` must be a non-negative int; anything else raises ValueError. Depth 0
+    returns a flat object.
+    """
+    if isinstance(depth, bool) or not isinstance(depth, int):
+        raise ValueError(f"depth must be an int, got {type(depth).__name__}")
+    if depth < 0:
+        raise ValueError(f"depth must be >= 0, got {depth}")
+
+    _ = make_rng(seed)
+    value: object = {"leaf": True}
+    for _ in range(depth):
+        value = {"child": value}
+    return value
