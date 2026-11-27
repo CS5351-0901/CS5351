@@ -12,8 +12,9 @@ import ast
 import re
 import tempfile
 import subprocess
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Dict, Any, Iterator, List, Optional, Tuple
 from dataclasses import dataclass, field, asdict
 from enum import Enum
 import importlib.util
@@ -86,6 +87,28 @@ class SecurityReport:
         )
 
 
+@contextmanager
+def temporary_source_file(code: str, suffix: str) -> Iterator[str]:
+    """Write source code to a temporary file and always remove it."""
+    temp_path: Optional[str] = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            suffix=suffix,
+            delete=False,
+            encoding="utf-8",
+        ) as temp_file:
+            temp_file.write(code)
+            temp_path = temp_file.name
+        yield temp_path
+    finally:
+        if temp_path:
+            try:
+                os.unlink(temp_path)
+            except FileNotFoundError:
+                pass
+
+
 class RuffChecker:
     
     def __init__(self):
@@ -111,18 +134,12 @@ class RuffChecker:
             return result
         
         try:
-            import tempfile
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
-                f.write(code)
-                temp_path = f.name
-            
-            import subprocess
-            proc = subprocess.run(
-                ['ruff', 'check', temp_path, '--output-format', 'json'],
-                capture_output=True,
-                text=True
-            )
-            os.unlink(temp_path)
+            with temporary_source_file(code, ".py") as temp_path:
+                proc = subprocess.run(
+                    ['ruff', 'check', temp_path, '--output-format', 'json'],
+                    capture_output=True,
+                    text=True
+                )
             
             if proc.stdout:
                 data = json.loads(proc.stdout)
@@ -190,18 +207,12 @@ class MypyChecker:
             return result
         
         try:
-            import tempfile
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
-                f.write(code)
-                temp_path = f.name
-            
-            import subprocess
-            proc = subprocess.run(
-                ['mypy', temp_path, '--no-error-summary', '--no-color'],
-                capture_output=True,
-                text=True
-            )
-            os.unlink(temp_path)
+            with temporary_source_file(code, ".py") as temp_path:
+                proc = subprocess.run(
+                    ['mypy', temp_path, '--no-error-summary', '--no-color'],
+                    capture_output=True,
+                    text=True
+                )
             
             for line in proc.stdout.split('\n'):
                 if not line.strip():
@@ -251,18 +262,12 @@ class BanditChecker:
             return result
         
         try:
-            import tempfile
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
-                f.write(code)
-                temp_path = f.name
-            
-            import subprocess
-            proc = subprocess.run(
-                ['bandit', '-f', 'json', temp_path],
-                capture_output=True,
-                text=True
-            )
-            os.unlink(temp_path)
+            with temporary_source_file(code, ".py") as temp_path:
+                proc = subprocess.run(
+                    ['bandit', '-f', 'json', temp_path],
+                    capture_output=True,
+                    text=True
+                )
             
             if proc.stdout:
                 data = json.loads(proc.stdout)
@@ -354,18 +359,12 @@ class ShellCheckChecker:
             return result
         
         try:
-            import tempfile
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.sh', delete=False) as f:
-                f.write(code)
-                temp_path = f.name
-            
-            import subprocess
-            proc = subprocess.run(
-                ['shellcheck', '-f', 'json', temp_path],
-                capture_output=True,
-                text=True
-            )
-            os.unlink(temp_path)
+            with temporary_source_file(code, ".sh") as temp_path:
+                proc = subprocess.run(
+                    ['shellcheck', '-f', 'json', temp_path],
+                    capture_output=True,
+                    text=True
+                )
             
             if proc.stdout:
                 data = json.loads(proc.stdout)
@@ -636,6 +635,7 @@ class CodeSecurityScanner:
     
     def scan_python(self, code: str, file_path: str = "") -> SecurityReport:
         report = SecurityReport(file_path=file_path)
+        syntax_valid = self._check_python_syntax(code, report)
         
         # 安全检查
         self._check_dangerous_patterns(code, report)
@@ -730,7 +730,7 @@ class CodeSecurityScanner:
         
         # 代码质量评估
         quality_score, quality_details = self._assess_quality(code)
-        report.quality_score = quality_score
+        report.quality_score = quality_score if syntax_valid else 0
         report.quality_details.update(quality_details)
         
         # 生成测试代码并运行
@@ -745,6 +745,25 @@ class CodeSecurityScanner:
         self._generate_summary(report)
         
         return report
+
+    def _check_python_syntax(self, code: str, report: SecurityReport) -> bool:
+        """Validate Python syntax without relying on optional external tools."""
+        try:
+            ast.parse(code)
+        except SyntaxError as error:
+            report.add_quality_issue(QualityIssue(
+                category="syntax",
+                message=error.msg,
+                line=error.lineno or 0,
+                code_snippet=(error.text or "").strip(),
+                suggestion="修复 Python 语法后重新运行检查",
+                tool="ast",
+            ))
+            report.quality_details["syntax_valid"] = False
+            return False
+
+        report.quality_details["syntax_valid"] = True
+        return True
     
     def scan_shell(self, code: str, file_path: str = "") -> SecurityReport:
         """扫描 Shell 代码"""
